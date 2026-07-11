@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+dist/
+build/
+
+# Data (raw + processed datasets are never committed)
+data/raw/
+data/processed/
+
+# Env
+.env
+.env.*
+
+# OS
+.DS_Store
