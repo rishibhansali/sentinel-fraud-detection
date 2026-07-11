@@ -22,3 +22,6 @@ data/processed/
 
 # OS
 .DS_Store
+
+# Local git worktrees (implementation-agent isolation, never committed)
+.worktrees/
