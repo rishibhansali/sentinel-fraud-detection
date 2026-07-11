@@ -107,9 +107,32 @@ it's the query a missing `(user_id, timestamp)` index hurts most directly
 strawman.
 
 Run against the full ~3.1M row table (not a sample). Multiple runs (e.g.
-20+), report median and p95 latency, note cold-cache vs warm-cache
-behavior if it materially differs. Results written to `BENCHMARK.md` at
+20+), report median and p95 latency. Results written to `BENCHMARK.md` at
 repo root, which Phase 2 will append "after" numbers to.
+
+**Column scope is locked: `SELECT *`, in both Phase 1 and Phase 2.** The
+comparison must isolate the index as the only variable that changes
+between "before" and "after" — narrowing columns in Phase 2 would mix
+"added an index" with "reduced payload size" and invalidate the
+comparison. Phase 2 must not quietly change this.
+
+**Cold-cache methodology is explicit, not inferred from idle time:**
+
+1. `docker compose restart db` (Postgres container restart — this is
+   the cold-cache trigger, since it drops the OS page cache and Postgres
+   shared_buffers backing the running container).
+2. Run 1 query immediately after the restart completes and the container
+   is accepting connections — this is the recorded **cold** run.
+3. Without restarting again, run the remaining N warm runs back-to-back
+   — these are the recorded **warm** runs, from which median/p95 are
+   computed.
+
+`scripts/benchmark.py` implements this restart step itself (shelling out
+to `docker compose restart db` and waiting for readiness) rather than
+relying on the operator's manual timing or on elapsed idle time as a
+proxy for cache state. `BENCHMARK.md` states this exact procedure
+alongside the numbers so the methodology is reproducible, not just the
+result.
 
 ## Explicitly out of scope
 
