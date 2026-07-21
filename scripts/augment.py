@@ -14,7 +14,7 @@ FAR_MIN_KM = 500.0
 FAR_MAX_KM = 3000.0
 FAR_FRACTION_FRAUD = 0.35
 FAR_FRACTION_LEGIT = 0.03
-KM_PER_DEGREE_LAT = 111.0
+EARTH_RADIUS_KM = 6371.0
 
 
 def generate_home_locations(num_users: int, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray]:
@@ -30,12 +30,29 @@ def assign_users_and_cards(n_rows: int, num_users: int, rng: np.random.Generator
     return user_ids, card_ids
 
 
-def _km_offset_to_latlon(lat0: np.ndarray, dist_km: np.ndarray, bearing_rad: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    dlat = (dist_km * np.cos(bearing_rad)) / KM_PER_DEGREE_LAT
-    km_per_degree_lon = KM_PER_DEGREE_LAT * np.cos(np.radians(lat0))
-    km_per_degree_lon = np.where(np.abs(km_per_degree_lon) < 1e-6, 1e-6, km_per_degree_lon)
-    dlon = (dist_km * np.sin(bearing_rad)) / km_per_degree_lon
-    return dlat, dlon
+def _destination_point(
+    lat0: np.ndarray, lon0: np.ndarray, dist_km: np.ndarray, bearing_rad: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Great-circle destination point given a start point, distance, and bearing.
+
+    Uses the standard spherical "destination point" formula (not a flat-earth
+    approximation), which stays accurate at the 500-3000km scale used for
+    "far" (impossible-geo) placements. lat0/lon0 and the returned lat/lon are
+    in degrees; dist_km is in kilometers; bearing_rad is in radians.
+    """
+    lat1 = np.radians(lat0)
+    lon1 = np.radians(lon0)
+    angular_dist = dist_km / EARTH_RADIUS_KM
+
+    lat2 = np.arcsin(
+        np.sin(lat1) * np.cos(angular_dist)
+        + np.cos(lat1) * np.sin(angular_dist) * np.cos(bearing_rad)
+    )
+    lon2 = lon1 + np.arctan2(
+        np.sin(bearing_rad) * np.sin(angular_dist) * np.cos(lat1),
+        np.cos(angular_dist) - np.sin(lat1) * np.sin(lat2),
+    )
+    return np.degrees(lat2), np.degrees(lon2)
 
 
 def assign_locations(
@@ -57,10 +74,10 @@ def assign_locations(
     dist_km = np.where(is_far, far_dist_km, near_dist_km)
 
     bearing_rad = rng.uniform(0.0, 2 * np.pi, size=n)
-    dlat, dlon = _km_offset_to_latlon(base_lat, dist_km, bearing_rad)
+    lat2, lon2 = _destination_point(base_lat, base_lon, dist_km, bearing_rad)
 
-    lat = np.clip(base_lat + dlat, -90.0, 90.0)
-    lon = ((base_lon + dlon + 180.0) % 360.0) - 180.0
+    lat = np.clip(lat2, -90.0, 90.0)
+    lon = ((lon2 + 180.0) % 360.0) - 180.0
     return lat, lon
 
 
