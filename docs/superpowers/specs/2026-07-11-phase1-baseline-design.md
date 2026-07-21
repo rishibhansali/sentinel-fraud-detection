@@ -85,12 +85,25 @@ Each replica:
 one idempotent (truncate-and-reload) pass, and prints the final row count
 and augmentation parameters used.
 
+## Train/val/test split (leakage-safe by construction)
+
+A stratified (on `Class`) 70/15/15 train/val/test split is assigned to
+each of the 284,807 **original** rows, once, **before** the 11x
+replication step. Every replica generated from a given original row
+inherits that row's split assignment unchanged — it is never re-rolled
+per replica. This is what prevents the same underlying transaction from
+leaking across train and test wearing a different synthetic identity in
+a later ML phase. Persisted as a `split` column (`'train' | 'val' |
+'test'`) on `transactions`. The 70/15/15 ratio is a documented judgment
+call. No ML training or feature engineering happens in Phase 1 — this
+only reserves the split for later phases to consume.
+
 ## Schema
 
 Single wide `transactions` table, deliberately minimally indexed (primary
 key only — no secondary indexes, no partitioning). Columns: transaction
 id (PK), user_id, card_id, timestamp, amount, lat, long, `v1`..`v28`,
-fraud label (`class`).
+fraud label (`class`), split assignment (`split`).
 
 Migration approach: **raw SQL** file (`infra/migrations/001_init.sql`),
 applied via `psql` — no migration framework. A single naive table doesn't
