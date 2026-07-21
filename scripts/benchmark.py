@@ -3,8 +3,12 @@
 Cold-cache methodology (locked in the Phase 1 design spec, not inferred
 from idle time): restart the Postgres container immediately before the
 single cold run, then run the warm runs back-to-back without restarting.
-Column scope is locked to SELECT * in both Phase 1 and Phase 2 so the
-index is the only variable that changes between "before" and "after".
+The restart reliably drops Postgres's own shared_buffers and forces a
+fresh backend process, but it does not flush the host's OS-level page
+cache — data files on the mounted volume can still be served from host
+page cache across the restart. Column scope is locked to SELECT * in
+both Phase 1 and Phase 2 so the index is the only variable that changes
+between "before" and "after".
 """
 import statistics
 import subprocess
@@ -82,8 +86,11 @@ no secondary index on `user_id`/`ts` — primary key only (see
 
 Cold cache is triggered explicitly, not inferred from idle time:
 
-1. `docker compose -f infra/docker-compose.yml restart db` — drops the
-   container's OS page cache and Postgres shared_buffers.
+1. `docker compose -f infra/docker-compose.yml restart db` — reliably
+   drops Postgres's own `shared_buffers` and forces a fresh backend
+   process. This does **not** flush the host's OS-level page cache;
+   data files on the mounted volume can still be served from host page
+   cache across the restart.
 2. The first query after the container reports ready is the recorded
    **cold** run.
 3. {WARM_RUNS} further queries run back-to-back afterward, without any

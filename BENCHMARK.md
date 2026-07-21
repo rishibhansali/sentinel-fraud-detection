@@ -18,8 +18,11 @@ no secondary index on `user_id`/`ts` — primary key only (see
 
 Cold cache is triggered explicitly, not inferred from idle time:
 
-1. `docker compose -f infra/docker-compose.yml restart db` — drops the
-   container's OS page cache and Postgres shared_buffers.
+1. `docker compose -f infra/docker-compose.yml restart db` — reliably
+   drops Postgres's own `shared_buffers` and forces a fresh backend
+   process. This does **not** flush the host's OS-level page cache;
+   data files on the mounted volume can still be served from host page
+   cache across the restart.
 2. The first query after the container reports ready is the recorded
    **cold** run.
 3. 20 further queries run back-to-back afterward, without any
