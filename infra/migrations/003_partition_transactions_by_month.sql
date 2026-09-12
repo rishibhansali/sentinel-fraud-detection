@@ -1,3 +1,4 @@
+\set ON_ERROR_STOP on
 -- Rebuild `transactions` as a monthly range-partitioned table on `ts`.
 -- Postgres has no in-place ALTER TABLE ... PARTITION BY; this requires a
 -- rename + rebuild + copy. Primary key becomes (id, ts) because Postgres
@@ -12,6 +13,17 @@
 -- Phase 1/2 benchmark query even in principle (see BENCHMARK.md).
 
 ALTER TABLE transactions RENAME TO transactions_old;
+
+-- ALTER TABLE ... RENAME TO does NOT rename the table's indexes or
+-- constraints -- they stay bound to their original names on the renamed
+-- table. Rename them out of the way first so the new `transactions` table
+-- created below can claim the canonical `idx_transactions_user_id_ts`,
+-- `transactions_pkey`, and `transactions_split_check` names on the first
+-- try, instead of erroring (index) or silently getting Postgres's
+-- auto-suffixed fallback names like `transactions_pkey1` (constraints).
+ALTER INDEX idx_transactions_user_id_ts RENAME TO idx_transactions_user_id_ts_old;
+ALTER TABLE transactions_old RENAME CONSTRAINT transactions_pkey TO transactions_old_pkey;
+ALTER TABLE transactions_old RENAME CONSTRAINT transactions_split_check TO transactions_old_split_check;
 
 CREATE TABLE transactions (
     id BIGINT NOT NULL,
