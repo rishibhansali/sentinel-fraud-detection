@@ -696,7 +696,17 @@ def test_score_transaction_no_rules_fire_when_nothing_anomalous():
 
     assert len(result.rule_results) == 3
     assert all(r.fired is False for r in result.rule_results)
-    assert result.total_score == 0.0
+    # No rule fires, but velocity's sub_score is never exactly 0.0 even with
+    # zero history: it counts the transaction being scored as part of its
+    # own window (confirmed decision), so a single transaction always
+    # contributes 1/threshold_count. "Nothing fired" does not mean
+    # "total_score == 0.0" — that's expected, not a bug.
+    velocity_result = next(r for r in result.rule_results if r.rule_name == "velocity")
+    amount_result = next(r for r in result.rule_results if r.rule_name == "amount_baseline")
+    geo_result = next(r for r in result.rule_results if r.rule_name == "geo_impossibility")
+    assert velocity_result.sub_score == 0.2  # 1 transaction / threshold_count 5, self-inclusive
+    expected_total = (velocity_result.sub_score + amount_result.sub_score + geo_result.sub_score) / 3
+    assert abs(result.total_score - expected_total) < 1e-9
 
 
 def test_score_transaction_zero_enabled_rules_guard():
