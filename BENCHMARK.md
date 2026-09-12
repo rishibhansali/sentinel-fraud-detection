@@ -33,5 +33,16 @@ Cold cache is triggered explicitly, not inferred from idle time:
 - Cold run: 76.26 ms
 - Warm runs (n=20): median 68.68 ms, p95 72.87 ms
 
-Phase 2 appends its "after" numbers below this line using the same query
-and the same restart-based cold-cache procedure.
+## Phase 2 — "after" optimized
+
+Same query, same `SELECT *` column scope, same restart-based cold-cache
+procedure as Phase 1 — run once against the fully optimized schema: a
+composite `(user_id, ts DESC)` index, monthly range partitioning on
+`ts` (primary key now `(id, ts)`), and a `user_transaction_rollup`
+materialized view (not used by this query directly — see "Why this
+works" below).
+
+### Results
+
+- Cold run: 4.52 ms
+- Warm runs (n=20): median 2.02 ms, p95 4.21 ms

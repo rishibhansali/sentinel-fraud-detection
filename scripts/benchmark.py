@@ -1,15 +1,18 @@
-"""Phase 1 'before' benchmark: naive per-user transaction history lookup.
+"""Phase 1 'before' + Phase 2 'after' benchmark: naive per-user
+transaction history lookup, before and after indexing, partitioning,
+and materialized-view optimizations.
 
-Cold-cache methodology (locked in the Phase 1 design spec, not inferred
-from idle time): restart the Postgres container immediately before the
-single cold run, then run the warm runs back-to-back without restarting.
-The restart reliably drops Postgres's own shared_buffers and forces a
-fresh backend process, but it does not flush the host's OS-level page
-cache — data files on the mounted volume can still be served from host
-page cache across the restart. Column scope is locked to SELECT * in
-both Phase 1 and Phase 2 so the index is the only variable that changes
-between "before" and "after".
+Cold-cache methodology (locked from Phase 1, unchanged): restart the
+Postgres container immediately before the single cold run, then run the
+warm runs back-to-back without restarting. This drops Postgres's own
+shared_buffers, not the host's OS-level page cache. Column scope is
+locked to SELECT * in both phases so the index/partition changes are
+the only variable that changes between "before" and "after".
+
+This script only ever touches the "## Phase 2" section of BENCHMARK.md —
+Phase 1's section is never regenerated or modified.
 """
+import os
 import statistics
 import subprocess
 import time
@@ -17,14 +20,22 @@ from pathlib import Path
 
 import psycopg2
 
-DB_DSN = "postgresql://sentinel:sentinel_dev_only@localhost:5432/sentinel"
+DB_DSN = os.environ.get(
+    "SENTINEL_DB_DSN", "postgresql://sentinel:sentinel_dev_only@localhost:5432/sentinel"
+)
 COMPOSE_FILE = Path(__file__).parent.parent / "infra" / "docker-compose.yml"
-BENCHMARK_USER_ID = 4885  # updated per Step 1's result (top user_id, 708 rows)
+BENCHMARK_USER_ID = 4885  # top user_id by row count, confirmed in Phase 1 (708 rows)
 QUERY_LIMIT = 50
 WARM_RUNS = 20
 READINESS_TIMEOUT_S = 60
 
 QUERY = "SELECT * FROM transactions WHERE user_id = %s ORDER BY ts DESC LIMIT %s;"
+
+PHASE2_HEADER = '## Phase 2 — "after" optimized'
+PHASE1_PLACEHOLDER = (
+    'Phase 2 appends its "after" numbers below this line using the '
+    'same query\nand the same restart-based cold-cache procedure.\n'
+)
 
 
 def restart_db_container() -> None:
@@ -54,6 +65,39 @@ def run_query_once() -> float:
         conn.close()
 
 
+def render_phase2_section(cold_ms: float, median_ms: float, p95_ms: float) -> str:
+    return f"""{PHASE2_HEADER}
+
+Same query, same `SELECT *` column scope, same restart-based cold-cache
+procedure as Phase 1 — run once against the fully optimized schema: a
+composite `(user_id, ts DESC)` index, monthly range partitioning on
+`ts` (primary key now `(id, ts)`), and a `user_transaction_rollup`
+materialized view (not used by this query directly — see "Why this
+works" below).
+
+### Results
+
+- Cold run: {cold_ms:.2f} ms
+- Warm runs (n={WARM_RUNS}): median {median_ms:.2f} ms, p95 {p95_ms:.2f} ms
+"""
+
+
+def update_benchmark_md(phase2_section: str) -> None:
+    benchmark_path = Path(__file__).parent.parent / "BENCHMARK.md"
+    existing = benchmark_path.read_text()
+
+    if PHASE2_HEADER in existing:
+        # Re-run: replace everything from the Phase 2 header onward.
+        before = existing.split(PHASE2_HEADER)[0]
+        updated = before.rstrip("\n") + "\n\n" + phase2_section
+    elif PHASE1_PLACEHOLDER in existing:
+        updated = existing.replace(PHASE1_PLACEHOLDER, phase2_section)
+    else:
+        updated = existing.rstrip("\n") + "\n\n" + phase2_section
+
+    benchmark_path.write_text(updated)
+
+
 def main() -> None:
     print("Restarting Postgres container for cold-cache run...")
     restart_db_container()
@@ -66,47 +110,9 @@ def main() -> None:
     median_ms = statistics.median(warm_ms)
     p95_ms = warm_ms[int(len(warm_ms) * 0.95) - 1]
 
-    report = f"""# BENCHMARK.md
-
-## Phase 1 — "before" baseline
-
-Query (locked for apples-to-apples comparison with Phase 2 — column scope
-does not change, only the index does):
-
-```sql
-{QUERY.strip()}
-```
-
-Run against the full augmented `transactions` table (~3.1M rows; see
-`data/README.md` for exact row count and augmentation method). Schema has
-no secondary index on `user_id`/`ts` — primary key only (see
-`infra/migrations/001_init.sql`).
-
-### Methodology
-
-Cold cache is triggered explicitly, not inferred from idle time:
-
-1. `docker compose -f infra/docker-compose.yml restart db` — reliably
-   drops Postgres's own `shared_buffers` and forces a fresh backend
-   process. This does **not** flush the host's OS-level page cache;
-   data files on the mounted volume can still be served from host page
-   cache across the restart.
-2. The first query after the container reports ready is the recorded
-   **cold** run.
-3. {WARM_RUNS} further queries run back-to-back afterward, without any
-   restart — these are the recorded **warm** runs.
-
-### Results
-
-- Cold run: {cold_seconds * 1000:.2f} ms
-- Warm runs (n={WARM_RUNS}): median {median_ms:.2f} ms, p95 {p95_ms:.2f} ms
-
-Phase 2 appends its "after" numbers below this line using the same query
-and the same restart-based cold-cache procedure.
-"""
-    (Path(__file__).parent.parent / "BENCHMARK.md").write_text(report)
+    update_benchmark_md(render_phase2_section(cold_seconds * 1000, median_ms, p95_ms))
     print(f"Warm median: {median_ms:.2f} ms, warm p95: {p95_ms:.2f} ms")
-    print("Wrote BENCHMARK.md")
+    print("Updated BENCHMARK.md's Phase 2 section")
 
 
 if __name__ == "__main__":
