@@ -36,6 +36,7 @@ PHASE1_PLACEHOLDER = (
     'Phase 2 appends its "after" numbers below this line using the '
     'same query\nand the same restart-based cold-cache procedure.\n'
 )
+WHY_THIS_WORKS_MARKER = "### Why this works"
 
 
 def restart_db_container() -> None:
@@ -86,7 +87,25 @@ def update_benchmark_md(phase2_section: str) -> None:
     benchmark_path = Path(__file__).parent.parent / "BENCHMARK.md"
     existing = benchmark_path.read_text()
 
-    if PHASE2_HEADER in existing:
+    if WHY_THIS_WORKS_MARKER in existing:
+        # Re-run: replace the Phase 2 numbers, but preserve any hand-written
+        # explanation appended after them (e.g. Task 5's "Why this works"
+        # section), which lives inside the "## Phase 2" section and would
+        # otherwise be discarded along with the stale numbers.
+        before_phase2 = (
+            existing.split(PHASE2_HEADER)[0]
+            if PHASE2_HEADER in existing
+            else existing.rstrip("\n") + "\n\n"
+        )
+        preserved_tail = WHY_THIS_WORKS_MARKER + existing.split(WHY_THIS_WORKS_MARKER, 1)[1]
+        updated = (
+            before_phase2.rstrip("\n")
+            + "\n\n"
+            + phase2_section.rstrip("\n")
+            + "\n\n"
+            + preserved_tail
+        )
+    elif PHASE2_HEADER in existing:
         # Re-run: replace everything from the Phase 2 header onward.
         before = existing.split(PHASE2_HEADER)[0]
         updated = before.rstrip("\n") + "\n\n" + phase2_section

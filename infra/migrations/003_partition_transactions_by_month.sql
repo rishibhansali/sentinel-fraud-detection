@@ -11,6 +11,18 @@
 -- transactions_2025_01 partition. This does not affect the correctness
 -- of this migration; it does mean partitioning prunes nothing for the
 -- Phase 1/2 benchmark query even in principle (see BENCHMARK.md).
+--
+-- Ordering dependency: this migration assumes 002_add_user_id_ts_index.sql
+-- has already been applied -- it renames that migration's index
+-- (idx_transactions_user_id_ts) off the old table below. Running this
+-- migration without 002 applied first will fail at that RENAME step.
+--
+-- Everything in this file is standard transaction-safe DDL + INSERT/SELECT
+-- (unlike 002's CREATE INDEX CONCURRENTLY, which cannot run inside a
+-- transaction), so the whole rebuild is wrapped in BEGIN/COMMIT: either it
+-- all succeeds or the database is left exactly as it was.
+
+BEGIN;
 
 ALTER TABLE transactions RENAME TO transactions_old;
 
@@ -82,3 +94,5 @@ CREATE TABLE transactions_default PARTITION OF transactions DEFAULT;
 CREATE INDEX idx_transactions_user_id_ts ON transactions (user_id, ts DESC);
 
 INSERT INTO transactions SELECT * FROM transactions_old;
+
+COMMIT;
