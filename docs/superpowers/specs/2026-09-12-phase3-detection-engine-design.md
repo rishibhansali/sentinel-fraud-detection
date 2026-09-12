@@ -63,9 +63,20 @@ nothing writes to them yet in this phase.
 
 ## The three rules
 
+**Sub-scores are never capped.** `min(x, 1.0)` is NOT applied anywhere in
+the rules below — severity above threshold must stay visible (e.g. a
+velocity of 50 against a threshold of 5 must score far higher than a
+velocity of 6 against the same threshold). Only `total_score` may be
+capped/normalized for display purposes, at implementation's discretion;
+individual rule `sub_score` values never are.
+
 1. **Velocity** — count of `recent_transactions` within `params.window_minutes`
-   before `transaction.ts`. Fires if count ≥ `params.threshold_count`.
-   `sub_score = min(count / threshold_count, 1.0)`.
+   before `transaction.ts`, PLUS the transaction being scored itself (a
+   `threshold_count` of 5 means 5 transactions total in the window,
+   including the current one). Fires when
+   `len(matching_recent_transactions) + 1 >= threshold_count`.
+   `sub_score = (len(matching_recent_transactions) + 1) / threshold_count`
+   (uncapped).
 
 2. **Amount vs. baseline** — relative deviation
    `(amount - avg_amount) / avg_amount` against `baseline.avg_amount`.
@@ -76,7 +87,7 @@ nothing writes to them yet in this phase.
    params.deviation_multiplier`. If `baseline.transaction_count == 0`
    (no history), the rule cannot fire — `fired=False, sub_score=0.0`,
    an explicit tested edge case, not a silent failure.
-   `sub_score = min(abs(relative_deviation) / deviation_multiplier, 1.0)`.
+   `sub_score = abs(relative_deviation) / deviation_multiplier` (uncapped).
 
 3. **Geo-impossibility** — compares `transaction` against the single most
    recent prior transaction: great-circle distance ÷ elapsed hours =
@@ -86,6 +97,17 @@ nothing writes to them yet in this phase.
    below that distance, so ordinary local movement / GPS jitter near a
    user's home never trips it. If there is no prior transaction, the
    rule cannot fire (same explicit-edge-case treatment as rule 2).
+
+   **Confirmed decision — zero elapsed time:** if the two transactions
+   have identical timestamps (`elapsed_hours == 0`) AND the distance
+   exceeds `params.min_distance_km`, this is an automatic fire — two
+   simultaneous transactions in two distant places is the single most
+   fraud-relevant case this rule can see, and it can't be reached by
+   computing `distance / elapsed_hours` (division by zero). Branch on
+   `elapsed_hours == 0` explicitly before any division; do not compute
+   implied speed in that case. `sub_score` in this branch is
+   `distance_km / min_distance_km` (uncapped) — there is no speed to
+   express severity with, so distance-over-guard stands in for it.
 
    **Reuse note:** `scripts/augment.py` has the *destination-point*
    formula (start point + distance + bearing → end point) — the forward
@@ -106,10 +128,19 @@ total_score = sum(weight * sub_score for enabled rules) / sum(weight for enabled
 
 Normalizing by enabled weight keeps the total comparable regardless of
 how many rules are on or how weights are tuned. Disabled rules
-(`enabled=false`) are excluded from both the sum and the weight total,
-and do not appear as "fired" in the result (though their `RuleResult`
-may still be included with `fired=False` for transparency — decided at
-implementation time based on what's cleanest to test).
+(`enabled=false`) are excluded from both the sum and the weight total.
+
+**Confirmed decision — zero enabled rules:** if every rule is disabled,
+`sum(weight for enabled rules) == 0`, which would divide by zero. This
+is guarded explicitly (not left to fall out of float behavior):
+`total_score = 0.0` and no rule is treated as fired when no rule is
+enabled. Tested explicitly.
+
+**Confirmed decision — disabled rules are never omitted from the output.**
+Every rule in `rules_config` produces a `RuleResult` in `ScoreResult`,
+whether enabled or not. A disabled rule's `RuleResult` is always
+`fired=False, sub_score=0.0, details={"skipped": "rule disabled"}` — the
+full rule set is always visible, not just the active subset.
 
 ## Loading `rules_config` from Postgres
 
