@@ -49,3 +49,9 @@ LOAD_GENERATOR_USER_POOL_SIZE = 50
 # gap left open above, for the one subprocess-based CLI test.
 RUN_PIPELINE_CLI_TEST_ID_BASE = 8_000_000
 RUN_PIPELINE_CLI_TEST_USER_ID = -4001
+
+# Phase 5 Task 1 (tests/schema/test_migration_007.py): schema tests insert
+# into flagged_cases / case_feedback and always clean up their own rows.
+# Above LOAD_GENERATOR_ID_RANGE_END so it cannot collide with a stress run.
+SCHEMA_TEST_TXN_ID_BASE = 200_000_000
+SCHEMA_TEST_USER_ID = -5001
