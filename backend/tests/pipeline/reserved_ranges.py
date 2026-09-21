@@ -68,3 +68,10 @@ CASES_TEST_USER_ID = -5101
 PIPELINE_RT_TEST_TXN_BASE = 220_000_000
 PIPELINE_RT_TEST_TXN_MAX = PIPELINE_RT_TEST_TXN_BASE + 9_999
 PIPELINE_RT_TEST_USER_ID = -5201
+
+# Phase 5 Task 5 (tests/api/): case REST API tests insert flagged_cases /
+# case_feedback rows and clean up their own rows (feedback first). Above the
+# PIPELINE_RT_TEST range.
+API_TEST_TXN_BASE = 230_000_000
+API_TEST_TXN_MAX = API_TEST_TXN_BASE + 9_999
+API_TEST_USER_ID = -5301
