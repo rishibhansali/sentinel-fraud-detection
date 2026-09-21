@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.api import db
 from app.api.cases import router as cases_router
+from app.api.rules import router as rules_router
 from app.api.ws import DEFAULT_HEARTBEAT_INTERVAL, router as ws_router
 from app.realtime.config import CASES_CHANNEL, redis_url
 from app.realtime.manager import DEFAULT_QUEUE_MAX, ConnectionManager
@@ -51,6 +52,7 @@ def create_app(
 
     app = FastAPI(title="Sentinel", lifespan=lifespan)
     app.include_router(cases_router)
+    app.include_router(rules_router)
     app.include_router(ws_router)
 
     @app.get("/health")

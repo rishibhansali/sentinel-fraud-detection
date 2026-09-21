@@ -82,3 +82,9 @@ API_TEST_USER_ID = -5301
 WS_TEST_TXN_BASE = 240_000_000
 WS_TEST_TXN_MAX = WS_TEST_TXN_BASE + 9_999
 WS_TEST_USER_ID = -5401
+
+# Phase 5 Task 7 (tests/rules/): hot-reload e2e tests insert transactions /
+# flagged_cases rows and clean up their own rows. Above the WS_TEST range.
+RULES_TEST_TXN_BASE = 250_000_000
+RULES_TEST_TXN_MAX = RULES_TEST_TXN_BASE + 9_999
+RULES_TEST_USER_ID = -5501

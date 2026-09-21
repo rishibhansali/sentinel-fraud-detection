@@ -23,9 +23,12 @@ def main() -> None:
     parser.add_argument("--start-id", type=int, default=0)
     parser.add_argument("--end-id", type=int, default=None)
     parser.add_argument("--row-cap", type=int, default=DEFAULT_ROW_CAP)
+    parser.add_argument("--rules-poll-seconds", type=float, default=30.0,
+                        help="safety-net poll interval for rules hot reload")
     args = parser.parse_args()
 
     rules = RulesProvider(args.dsn)
+    rules.start_hot_reload(poll_interval=args.rules_poll_seconds)
     processing_conn = psycopg2.connect(args.dsn)
     on_transaction = make_pipeline_callback(processing_conn, rules, row_cap=args.row_cap)
 
@@ -41,9 +44,12 @@ def main() -> None:
 
     signal.signal(signal.SIGINT, handle_sigint)
 
-    harness.start(on_transaction)
-    harness.join()
-    processing_conn.close()
+    try:
+        harness.start(on_transaction)
+        harness.join()
+    finally:
+        rules.stop_hot_reload()
+        processing_conn.close()
 
 
 if __name__ == "__main__":
