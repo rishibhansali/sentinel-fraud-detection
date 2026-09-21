@@ -95,3 +95,13 @@ RULES_TEST_USER_ID = -5501
 PRIORITY_TEST_TXN_BASE = 260_000_000
 PRIORITY_TEST_TXN_MAX = PRIORITY_TEST_TXN_BASE + 9_999
 PRIORITY_TEST_USER_ID = -5601
+
+# Phase 5 Task 9 (scripts/smoke_phase5.py and tests/integration/): the smoke
+# script owns 270,000,000..270,009,999 (users -5701..-5703; it defines its own
+# constants, being outside the backend package, and cleans up its rows); the
+# integration test owns 271,000,000..271,009,999 (user -5801).
+SMOKE_TXN_BASE = 270_000_000
+SMOKE_TXN_MAX = SMOKE_TXN_BASE + 9_999
+INTEGRATION_TEST_TXN_BASE = 271_000_000
+INTEGRATION_TEST_TXN_MAX = INTEGRATION_TEST_TXN_BASE + 9_999
+INTEGRATION_TEST_USER_ID = -5801
