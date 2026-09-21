@@ -13,6 +13,7 @@ import psycopg2.extras
 from app.detection.models import RuleConfig, ScoreResult, Transaction
 from app.detection.scoring import score_transaction
 from app.pipeline.loader import DEFAULT_ROW_CAP, get_recent_transactions, get_user_baseline
+from app.pipeline.priority import compute_priority, lookup_priority_inputs
 from app.pipeline.rules_provider import RulesProvider
 from app.realtime.events import case_summary
 from app.realtime.publisher import publish_case_event
@@ -21,9 +22,9 @@ log = logging.getLogger(__name__)
 
 _INSERT_FLAGGED_CASE = """
     INSERT INTO flagged_cases (transaction_id, transaction_ts, user_id, total_score, priority_score,
-                               rule_results, rules_config_version)
-    VALUES (%(transaction_id)s, %(transaction_ts)s, %(user_id)s, %(total_score)s, %(total_score)s,
-            %(rule_results)s, %(rules_config_version)s)
+                               rule_results, rules_config_version, priority_adjustment)
+    VALUES (%(transaction_id)s, %(transaction_ts)s, %(user_id)s, %(total_score)s, %(priority_score)s,
+            %(rule_results)s, %(rules_config_version)s, %(priority_adjustment)s)
     ON CONFLICT (transaction_id) DO NOTHING
     RETURNING id;
 """
@@ -43,12 +44,18 @@ def is_flagged(result: ScoreResult) -> bool:
 
 
 def persist_flagged_case(
-    conn, transaction: Transaction, result: ScoreResult, rules_config_version: Optional[int] = None
+    conn,
+    transaction: Transaction,
+    result: ScoreResult,
+    rules_config_version: Optional[int] = None,
+    priority_score: Optional[float] = None,
+    priority_adjustment: Optional[dict] = None,
 ) -> Optional[int]:
     """Insert-if-absent. Returns the new case id, or None if a case for this
     transaction already existed (first write wins; the stored row is never
     altered). A skipped duplicate is logged with both the stored and the newly
-    computed score/version. Does not commit.
+    computed score/version. Does not commit. priority_score defaults to
+    total_score and priority_adjustment to NULL (no demotion).
     """
     rule_results_json = json.dumps([
         {"rule_name": r.rule_name, "fired": r.fired, "sub_score": r.sub_score, "details": r.details}
@@ -62,6 +69,8 @@ def persist_flagged_case(
             "total_score": result.total_score,
             "rule_results": rule_results_json,
             "rules_config_version": rules_config_version,
+            "priority_score": result.total_score if priority_score is None else priority_score,
+            "priority_adjustment": None if priority_adjustment is None else json.dumps(priority_adjustment),
         })
         row = cur.fetchone()
         if row is not None:
@@ -105,7 +114,14 @@ def make_pipeline_callback(
 
         case_id = None
         if is_flagged(result):
-            case_id = persist_flagged_case(conn, transaction, result, snapshot.version)
+            inputs = lookup_priority_inputs(
+                conn, transaction.user_id, [r.rule_name for r in result.rule_results if r.fired]
+            )
+            priority_score, adjustment = compute_priority(result, snapshot.rules_config, inputs)
+            case_id = persist_flagged_case(
+                conn, transaction, result, snapshot.version,
+                priority_score=priority_score, priority_adjustment=adjustment,
+            )
 
         # Commit per transaction (not batched): keeps every flagged row
         # durable immediately. Candidate for batching if throughput numbers
