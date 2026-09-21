@@ -8,10 +8,10 @@ import signal
 
 import psycopg2
 
-from app.detection.config import load_rules_config
 from app.pipeline.loader import DEFAULT_ROW_CAP
 from app.pipeline.pipeline import make_pipeline_callback
 from app.pipeline.replay import ReplayHarness
+from app.pipeline.rules_provider import RulesProvider
 
 DEFAULT_DSN = "postgresql://sentinel:sentinel_dev_only@localhost:5432/sentinel"
 
@@ -25,9 +25,9 @@ def main() -> None:
     parser.add_argument("--row-cap", type=int, default=DEFAULT_ROW_CAP)
     args = parser.parse_args()
 
-    rules_config = load_rules_config(args.dsn)
+    rules = RulesProvider(args.dsn)
     processing_conn = psycopg2.connect(args.dsn)
-    on_transaction = make_pipeline_callback(processing_conn, rules_config, row_cap=args.row_cap)
+    on_transaction = make_pipeline_callback(processing_conn, rules, row_cap=args.row_cap)
 
     harness = ReplayHarness(
         conn_factory=lambda: psycopg2.connect(args.dsn),

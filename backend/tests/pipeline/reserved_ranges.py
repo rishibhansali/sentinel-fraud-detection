@@ -62,3 +62,9 @@ SCHEMA_TEST_USER_ID = -5001
 CASES_TEST_TXN_BASE = 210_000_000
 CASES_TEST_TXN_MAX = CASES_TEST_TXN_BASE + 9_999
 CASES_TEST_USER_ID = -5101
+
+# Phase 5 Task 4 (tests/pipeline/test_pipeline_realtime.py): flagged_cases /
+# transactions rows cleaned up per test. Above the CASES_TEST range.
+PIPELINE_RT_TEST_TXN_BASE = 220_000_000
+PIPELINE_RT_TEST_TXN_MAX = PIPELINE_RT_TEST_TXN_BASE + 9_999
+PIPELINE_RT_TEST_USER_ID = -5201
