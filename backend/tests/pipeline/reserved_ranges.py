@@ -88,3 +88,10 @@ WS_TEST_USER_ID = -5401
 RULES_TEST_TXN_BASE = 250_000_000
 RULES_TEST_TXN_MAX = RULES_TEST_TXN_BASE + 9_999
 RULES_TEST_USER_ID = -5501
+
+# Phase 5 Task 8 (tests/pipeline/test_priority*.py): priority-demotion tests
+# insert transactions / flagged_cases / case_feedback and clean up their own
+# rows. Above the RULES_TEST range. Users -5601..-5699.
+PRIORITY_TEST_TXN_BASE = 260_000_000
+PRIORITY_TEST_TXN_MAX = PRIORITY_TEST_TXN_BASE + 9_999
+PRIORITY_TEST_USER_ID = -5601
