@@ -87,6 +87,7 @@ class AsyncChannelSubscriber:
                     if msg["type"] == "subscribe":
                         self._subscriptions += 1
                         self._ready.set()
+                        backoff = BACKOFF_START  # a confirmed subscription is a healthy connection
                         if self._subscriptions > 1 and self.on_reconnect:
                             await self._call(self.on_reconnect, what="on_reconnect")
                     elif msg["type"] == "message":
@@ -159,6 +160,7 @@ class ThreadedChannelSubscriber:
                     if msg["type"] == "subscribe":
                         self._subscriptions += 1
                         self._ready.set()
+                        backoff = BACKOFF_START  # a confirmed subscription is a healthy connection
                         if self._subscriptions > 1 and self.on_reconnect:
                             self._call(self.on_reconnect, what="on_reconnect")
                     elif msg["type"] == "message":
