@@ -75,3 +75,10 @@ PIPELINE_RT_TEST_USER_ID = -5201
 API_TEST_TXN_BASE = 230_000_000
 API_TEST_TXN_MAX = API_TEST_TXN_BASE + 9_999
 API_TEST_USER_ID = -5301
+
+# Phase 5 Task 6 (tests/ws/): WebSocket repair-protocol tests insert
+# flagged_cases rows and clean up their own rows (feedback first). Above the
+# API_TEST range.
+WS_TEST_TXN_BASE = 240_000_000
+WS_TEST_TXN_MAX = WS_TEST_TXN_BASE + 9_999
+WS_TEST_USER_ID = -5401
