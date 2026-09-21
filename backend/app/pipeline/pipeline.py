@@ -12,8 +12,8 @@ from app.detection.scoring import score_transaction
 from app.pipeline.loader import DEFAULT_ROW_CAP, get_recent_transactions, get_user_baseline
 
 _INSERT_FLAGGED_CASE = """
-    INSERT INTO flagged_cases (transaction_id, transaction_ts, user_id, total_score, rule_results)
-    VALUES (%(transaction_id)s, %(transaction_ts)s, %(user_id)s, %(total_score)s, %(rule_results)s)
+    INSERT INTO flagged_cases (transaction_id, transaction_ts, user_id, total_score, priority_score, rule_results)
+    VALUES (%(transaction_id)s, %(transaction_ts)s, %(user_id)s, %(total_score)s, %(total_score)s, %(rule_results)s)
     ON CONFLICT (transaction_id) DO NOTHING;
 """
 
