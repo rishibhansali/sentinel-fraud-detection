@@ -55,3 +55,10 @@ RUN_PIPELINE_CLI_TEST_USER_ID = -4001
 # Above LOAD_GENERATOR_ID_RANGE_END so it cannot collide with a stress run.
 SCHEMA_TEST_TXN_ID_BASE = 200_000_000
 SCHEMA_TEST_USER_ID = -5001
+
+# Phase 5 Task 3 (tests/cases/): case repository tests insert flagged_cases /
+# case_feedback rows and always clean up their own rows (feedback first).
+# Above the SCHEMA_TEST range (200,000,000..+999).
+CASES_TEST_TXN_BASE = 210_000_000
+CASES_TEST_TXN_MAX = CASES_TEST_TXN_BASE + 9_999
+CASES_TEST_USER_ID = -5101
