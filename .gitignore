@@ -25,3 +25,7 @@ data/processed/
 
 # Local git worktrees (implementation-agent isolation, never committed)
 .worktrees/
+
+# Local tooling
+.worktrees/
+.Rhistory

@@ -143,7 +143,12 @@ never through `case_feedback`. Claiming is not a decision.
    WHERE id=%(id)s AND status='in_review' AND claimed_by=%(analyst)s
   RETURNING ...;
   ```
-  Only the holder can release, and rows affected is checked the same way.
+  Release is restricted to `claimed_by == calling analyst`, symmetric with
+  the claimant-only decision rule in 4.2: one analyst cannot release another's
+  claim, and the `WHERE claimed_by=%(analyst)s` clause enforces that
+  atomically. Rows affected is checked the same way as for claim (0 rows is
+  `409`). Because `analyst` is unauthenticated free text (Phase 11 talking
+  point), this prevents accidents, not impersonation.
 - A concurrency test (real threads, real Postgres, N analysts claiming
   simultaneously) asserts exactly one wins.
 
@@ -176,8 +181,17 @@ status = current decision, if any case_feedback row exists
 - A decision on an `in_review` case is accepted only from its claimant
   (`409` otherwise).
 - A decision on an `open` case (never claimed) is allowed.
-- A decision on an already-decided case is allowed as a correction (any
-  analyst) and appended. A later decision supersedes by the resolution rule.
+- A correction on an already-decided case may be submitted by **any
+  analyst**, and is appended. A later decision supersedes by the resolution
+  rule. Reason for not restricting it: `case_feedback` is append-only and the
+  `(decided_at, id)` rule already resolves conflicting decisions
+  deterministically, with the full history preserved and attributed. Nothing
+  is lost or overwritten, so a restriction would add friction without adding
+  integrity. The claimant-only rule exists to stop two analysts working the
+  same case simultaneously, and a decided case is no longer being worked, so
+  that reason does not apply. Cost accepted: with unauthenticated `analyst`,
+  anyone can flip a verdict, which is visible in the history and a Phase 11
+  item.
 - A decided case cannot be claimed (claim requires `status='open'`).
   Reopening is out of scope.
 
