@@ -15,6 +15,7 @@ test('queue order follows backend priority and id tie-break', () => {
 test('status and search filters include only matching cases', () => {
   const cases = [row(1, 0.4), row(2, 0.8, 'in_review'), row(3, 0.9, 'false_positive')]
   assert.deepEqual(visibleCases(cases, 'open', '', 50).map(item => item.id), [1])
+  assert.deepEqual(visibleCases(cases, 'decided', '', 50).map(item => item.id), [3])
   assert.deepEqual(visibleCases(cases, 'all', '300000003', 50).map(item => item.id), [3])
   assert.deepEqual(visibleCases(cases, 'pending', '-7002', 50).map(item => item.id), [2])
   assert.deepEqual(caseCounts(cases), { open: 1, in_review: 1, decided: 1, total: 3 })

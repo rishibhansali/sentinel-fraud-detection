@@ -4,9 +4,9 @@ Real-time fraud detection and reviewer platform — a deterministic rules-based 
 
 ## Status
 
-The backend through Phase 8 is implemented: transaction replay and rules-based detection create cases in Postgres; analysts can claim, release, and decide cases through the REST API; Redis fans out case events to WebSocket clients; and rule changes hot-reload into the running pipeline. Phase 6 adds offline Isolation Forest evaluation on original source rows. Phase 7 can annotate newly rule-created cases with a compatible local model when explicitly enabled. Phase 8 can add an optional Claude explanation after a rule-created case is committed. There is no reviewer UI yet. The [roadmap](docs/ROADMAP.md) and [Phase 8 design](docs/superpowers/specs/2026-10-07-phase8-case-summaries-design.md) describe the boundaries.
+Phases 1–9 are implemented: transaction replay and rules-based detection create cases in Postgres; analysts can claim, release, and decide cases through the REST API; Redis fans out case events to WebSocket clients; and rule changes hot-reload into the running pipeline. Phase 6 adds offline Isolation Forest evaluation on original source rows. Phase 7 can annotate newly rule-created cases with a compatible local model when explicitly enabled. Phase 8 can add an optional Claude explanation after a rule-created case is committed. Phase 9 adds a browser reviewer interface for the existing case, feedback, and rule APIs. The [roadmap](docs/ROADMAP.md) and [Phase 9 design](docs/superpowers/specs/2026-10-07-phase9-reviewer-ui-design.md) describe the boundaries.
 
-**Detection uses no AI.** Every flag comes from an auditable rule. A later phase may add plain-English summaries after a case is flagged; those summaries will not determine whether a transaction is flagged.
+**Detection uses no AI.** Every flag comes from an auditable rule. Optional ML annotations and AI summaries add context only after a case is flagged; neither determines whether a transaction is flagged.
 
 ## Stack
 
@@ -15,7 +15,7 @@ The backend through Phase 8 is implemented: transaction replay and rules-based d
 | Backend | FastAPI (Python) | REST APIs, case workflow, and deterministic scoring |
 | Database | PostgreSQL 16 | Transaction history, case queue, rule history, and query benchmarks |
 | Real-time | Redis 7 + WebSockets | Push case changes across API instances; REST provides missed-event repair |
-| Frontend | React (planned) | Reviewer UI is a later phase |
+| Frontend | React + Vite | Local reviewer UI for cases, feedback, and rule controls |
 | Infra | Docker Compose locally | Runs Postgres and Redis for development and tests |
 
 ## Design Decisions Made So Far
@@ -70,6 +70,20 @@ To run the service and replay pipeline, start these in separate terminals from `
 ```
 
 The API uses `SENTINEL_DB_DSN` (default `postgresql://sentinel:sentinel_dev_only@localhost:5432/sentinel`) and `REDIS_URL` (default `redis://localhost:6379/0`).
+
+## Reviewer UI
+
+With Postgres, Redis, and the API running as above, install frontend dependencies locally and start Vite in another terminal:
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+Open the local URL printed by Vite (normally `http://127.0.0.1:5173`). Its development proxy forwards `/cases`, `/rules`, `/stats`, and `/ws` to the API on port 8000. Enter an analyst name before claiming, releasing, deciding, or correcting a case; the name is stored in this browser and is an attribution label, not authentication. The queue offers status filters, search, priority order, and case detail; the detail shows rule evidence and optional ML/AI context when present. The Rules view edits current rule weights and thresholds and shows stats and change history. WebSocket events update the queue, while REST scans repair missed events after reconnects or periodically. An API connection is required; there is no deployed frontend or login yet.
+
+Run frontend checks with `npm test` and `npm run build` from `frontend/`.
 
 ## Offline anomaly evaluation
 
