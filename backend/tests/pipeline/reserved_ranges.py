@@ -50,3 +50,59 @@ LOAD_GENERATOR_USER_POOL_SIZE = 50
 # 8,000,000..8,000,999.
 RUN_PIPELINE_CLI_TEST_ID_BASE = 8_000_000
 RUN_PIPELINE_CLI_TEST_USER_ID = -4001
+
+# Phase 5 Task 1 (tests/schema/test_migration_007.py): schema tests insert
+# into flagged_cases / case_feedback and always clean up their own rows.
+# Above LOAD_GENERATOR_ID_RANGE_END so it cannot collide with a stress run.
+SCHEMA_TEST_TXN_ID_BASE = 200_000_000
+SCHEMA_TEST_USER_ID = -5001
+
+# Phase 5 Task 3 (tests/cases/): case repository tests insert flagged_cases /
+# case_feedback rows and always clean up their own rows (feedback first).
+# Above the SCHEMA_TEST range (200,000,000..+999).
+CASES_TEST_TXN_BASE = 210_000_000
+CASES_TEST_TXN_MAX = CASES_TEST_TXN_BASE + 9_999
+CASES_TEST_USER_ID = -5101
+
+# Phase 5 Task 4 (tests/pipeline/test_pipeline_realtime.py): flagged_cases /
+# transactions rows cleaned up per test. Above the CASES_TEST range.
+PIPELINE_RT_TEST_TXN_BASE = 220_000_000
+PIPELINE_RT_TEST_TXN_MAX = PIPELINE_RT_TEST_TXN_BASE + 9_999
+PIPELINE_RT_TEST_USER_ID = -5201
+
+# Phase 5 Task 5 (tests/api/): case REST API tests insert flagged_cases /
+# case_feedback rows and clean up their own rows (feedback first). Above the
+# PIPELINE_RT_TEST range.
+API_TEST_TXN_BASE = 230_000_000
+API_TEST_TXN_MAX = API_TEST_TXN_BASE + 9_999
+API_TEST_USER_ID = -5301
+
+# Phase 5 Task 6 (tests/ws/): WebSocket repair-protocol tests insert
+# flagged_cases rows and clean up their own rows (feedback first). Above the
+# API_TEST range.
+WS_TEST_TXN_BASE = 240_000_000
+WS_TEST_TXN_MAX = WS_TEST_TXN_BASE + 9_999
+WS_TEST_USER_ID = -5401
+
+# Phase 5 Task 7 (tests/rules/): hot-reload e2e tests insert transactions /
+# flagged_cases rows and clean up their own rows. Above the WS_TEST range.
+RULES_TEST_TXN_BASE = 250_000_000
+RULES_TEST_TXN_MAX = RULES_TEST_TXN_BASE + 9_999
+RULES_TEST_USER_ID = -5501
+
+# Phase 5 Task 8 (tests/pipeline/test_priority*.py): priority-demotion tests
+# insert transactions / flagged_cases / case_feedback and clean up their own
+# rows. Above the RULES_TEST range. Users -5601..-5699.
+PRIORITY_TEST_TXN_BASE = 260_000_000
+PRIORITY_TEST_TXN_MAX = PRIORITY_TEST_TXN_BASE + 9_999
+PRIORITY_TEST_USER_ID = -5601
+
+# Phase 5 Task 9 (scripts/smoke_phase5.py and tests/integration/): the smoke
+# script owns 270,000,000..270,009,999 (users -5701..-5703; it defines its own
+# constants, being outside the backend package, and cleans up its rows); the
+# integration test owns 271,000,000..271,009,999 (user -5801).
+SMOKE_TXN_BASE = 270_000_000
+SMOKE_TXN_MAX = SMOKE_TXN_BASE + 9_999
+INTEGRATION_TEST_TXN_BASE = 271_000_000
+INTEGRATION_TEST_TXN_MAX = INTEGRATION_TEST_TXN_BASE + 9_999
+INTEGRATION_TEST_USER_ID = -5801

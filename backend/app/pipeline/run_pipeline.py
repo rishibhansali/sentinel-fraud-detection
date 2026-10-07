@@ -8,10 +8,10 @@ import signal
 
 import psycopg2
 
-from app.detection.config import load_rules_config
 from app.pipeline.loader import DEFAULT_ROW_CAP
 from app.pipeline.pipeline import make_pipeline_callback
 from app.pipeline.replay import ReplayHarness
+from app.pipeline.rules_provider import RulesProvider
 
 DEFAULT_DSN = "postgresql://sentinel:sentinel_dev_only@localhost:5432/sentinel"
 
@@ -23,11 +23,14 @@ def main() -> None:
     parser.add_argument("--start-id", type=int, default=0)
     parser.add_argument("--end-id", type=int, default=None)
     parser.add_argument("--row-cap", type=int, default=DEFAULT_ROW_CAP)
+    parser.add_argument("--rules-poll-seconds", type=float, default=30.0,
+                        help="safety-net poll interval for rules hot reload")
     args = parser.parse_args()
 
-    rules_config = load_rules_config(args.dsn)
+    rules = RulesProvider(args.dsn)
+    rules.start_hot_reload(poll_interval=args.rules_poll_seconds)
     processing_conn = psycopg2.connect(args.dsn)
-    on_transaction = make_pipeline_callback(processing_conn, rules_config, row_cap=args.row_cap)
+    on_transaction = make_pipeline_callback(processing_conn, rules, row_cap=args.row_cap)
 
     harness = ReplayHarness(
         conn_factory=lambda: psycopg2.connect(args.dsn),
@@ -41,9 +44,12 @@ def main() -> None:
 
     signal.signal(signal.SIGINT, handle_sigint)
 
-    harness.start(on_transaction)
-    harness.join()
-    processing_conn.close()
+    try:
+        harness.start(on_transaction)
+        harness.join()
+    finally:
+        rules.stop_hot_reload()
+        processing_conn.close()
 
 
 if __name__ == "__main__":
