@@ -47,8 +47,6 @@ def lookup_priority_inputs(conn, user_id: int, fired_rules) -> PriorityInputs:
     with conn.cursor() as cur:
         cur.execute(_VETO_LOOKUP, (user_id,))
         veto = bool(cur.fetchone()[0])
-        if veto:  # any confirmed_fraud removes all demotion; skip the rest
-            return PriorityInputs(veto=True)
         fps = {}
         for name in fired_rules:
             cur.execute(_FP_LOOKUP, {
@@ -59,7 +57,7 @@ def lookup_priority_inputs(conn, user_id: int, fired_rules) -> PriorityInputs:
             count, ids = cur.fetchone()
             if count:
                 fps[name] = (count, list(ids or []))
-    return PriorityInputs(veto=False, false_positives=fps)
+    return PriorityInputs(veto=veto, false_positives=fps)
 
 
 def combine(sub_scores: dict[str, float], rules_config: dict[str, RuleConfig]) -> float:
@@ -82,16 +80,17 @@ def compute_priority(
     rules_config: dict[str, RuleConfig],
     inputs: PriorityInputs,
 ) -> tuple[float, Optional[dict]]:
-    """Pure. Returns (priority_score, priority_adjustment); the adjustment is
-    None when nothing was adjusted (then priority_score == total_score)."""
+    """Pure. Returns (priority_score, priority_adjustment). A veto citation
+    explains a suppressed demotion when relevant false-positive history exists;
+    otherwise the adjustment is None when no rule has that history."""
     per_rule = []
     subs: dict[str, float] = {}
     for r in result.rule_results:
         sub = r.sub_score
         n, ids = inputs.false_positives.get(r.rule_name, (0, []))
         enabled = rules_config[r.rule_name].enabled
-        if r.fired and enabled and not inputs.veto and n > 0:
-            factor = demotion_factor(n)
+        if r.fired and enabled and n > 0:
+            factor = 1.0 if inputs.veto else demotion_factor(n)
             sub = r.sub_score * factor
             per_rule.append({
                 "rule_name": r.rule_name,
@@ -107,7 +106,7 @@ def compute_priority(
         "formula_version": FORMULA_VERSION,
         "decay": DECAY,
         "floor": FLOOR,
-        "veto": False,
+        "veto": inputs.veto,
         "per_rule": per_rule,
     }
     return score, adjustment

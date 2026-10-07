@@ -72,13 +72,13 @@ Explicitly listed, none silent.
    so Task 1 alone broke 5 Phase 4 tests. Fixed by landing a one-line
    `priority_score = total_score` in the INSERT immediately after Task 1
    (commit `ff5f450`); demotion logic still landed in Task 8.
-2. **`veto` in the citation can never be true (OPEN, proposed fix).** Spec
-   section 8 says `priority_adjustment` is NULL when nothing is adjusted, and a
-   veto means nothing is adjusted, so a stored citation always has
-   `veto: false`. Implemented literally. **Proposed fix:** when a veto
-   suppresses a demotion that would otherwise have applied, store a citation
-   with `veto: true`, `factor: 1.0` and the counts, so analysts can see why a
-   case with false-positive history was not demoted. Needs your decision.
+2. **`veto` citation gap (resolved in the 2026-10-07 review).** The original
+   spec made `priority_adjustment` NULL whenever the score was unchanged, so
+   `veto` could never be true in a stored citation. When confirmed fraud now
+   suppresses an otherwise applicable demotion, the case stores `veto: true`,
+   `factor: 1.0`, and the false-positive counts and case ids. The priority
+   remains equal to `total_score`. With no relevant false positives, the
+   citation remains NULL.
 3. **7.1 write path locks ONE row; the last-enabled guard needs ALL.** Two
    concurrent disables of different rules could each pass. Implemented as
    `SELECT ... FOR UPDATE` on all `rules_config` rows (all PATCHes serialize).
@@ -217,10 +217,12 @@ New in Phase 5:
   floating-point rule fields. Previously `math.isfinite` raised
   `OverflowError`, producing a server error. Two real-API regression cases
   cover the weight and parameter paths.
-- Fresh main-worktree verification after that fix: **251 passed** in the full
+- Fresh main-worktree verification after both review fixes: **251 passed** in the full
   backend suite; the real API/pipeline smoke passed **17/17** steps and
   restored its database state. No frontend build exists yet.
-- The veto-citation question in the spec issues above remains open.
+- The veto-citation gap is resolved as described above; pure, database, and
+  end-to-end exit tests now require the explanation while keeping priority
+  unchanged. The spec's citation rule and exit criterion were updated.
 
 ## Setup steps for a user (complete list, including pre-existing)
 1. Start Docker Desktop; `docker compose -f infra/docker-compose.yml up -d db redis`.

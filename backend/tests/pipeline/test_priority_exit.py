@@ -222,6 +222,10 @@ def _run_scenario(conn, run, client, events):
     _show("case D", d)
     assert R in _fired(d)
     assert d["priority_score"] == d["total_score"], "confirmed_fraud must veto all demotion for U"
-    assert d["priority_adjustment"] is None
-    print("    OK: veto in effect, priority_score == total_score, no adjustment")
+    assert d["priority_adjustment"]["veto"] is True
+    assert d["priority_adjustment"]["per_rule"] == [{
+        "rule_name": R, "prior_false_positive_count": 1,
+        "prior_false_positive_case_ids": [a["id"]], "factor": 1.0,
+    }]
+    print("    OK: veto in effect, priority_score == total_score, citation explains why")
     print("=== EXIT TEST PASSED ===")
