@@ -100,7 +100,7 @@ deleted. **Claiming does not write here** (section 4).
 | ml_anomaly_score | DOUBLE PRECISION NULL | no default, no NOT NULL. Phase 7 populates it |
 | rules_config_version | BIGINT NULL REFERENCES rules_config_history(id) | version in effect when scored. NULL only on pre-Phase-5 rows (not provable, left NULL, documented) |
 | priority_score | DOUBLE PRECISION NOT NULL | queue sort key. Backfilled to `total_score` for existing rows |
-| priority_adjustment | JSONB NULL | citation for demotion (section 8). NULL when not adjusted |
+| priority_adjustment | JSONB NULL | citation for demotion or a vetoed demotion (section 8). NULL when no fired rule has relevant false-positive history |
 
 Constraints:
 - `(claimed_by IS NULL) = (claimed_at IS NULL)`
@@ -348,7 +348,8 @@ total_score` exactly. Guarantees, each covered by a test:
 - Any `confirmed_fraud` for the user removes all demotion for that user.
 - `total_score` is untouched.
 
-**Citation.** `priority_adjustment` (NULL when nothing was adjusted):
+**Citation.** `priority_adjustment` is NULL when no fired, enabled rule has
+relevant false-positive history. It records an applied demotion like this:
 ```json
 {"formula_version": 1, "decay": 0.8, "floor": 0.5, "veto": false,
  "per_rule": [{"rule_name": "velocity", "prior_false_positive_count": 2,
@@ -358,6 +359,12 @@ Cited case ids are the most recent 10, with the full count alongside. The
 case detail endpoint returns it, so an analyst sees exactly why a case sits
 lower. The constants are stored in the citation, so old cases stay
 interpretable if constants change later.
+
+If a `confirmed_fraud` case vetoes a demotion that otherwise would have
+applied, keep `priority_score == total_score` and store the same per-rule
+counts and case ids with `"veto": true` and `"factor": 1.0`. This explains why
+false-positive history did not lower the case's priority. When there is no
+relevant false-positive history, a veto alone has no citation.
 
 **Deferred:** time-decay or expiry of old false-positive marks (unbounded
 history currently counts). Noted as a limitation.
@@ -369,7 +376,8 @@ history currently counts). Noted as a limitation.
 3. A new transaction from U fires R: a case is created (not suppressed) with
    `priority_score < total_score`, and the citation names the first case.
 4. The same scenario without step 2 yields no adjustment.
-5. Add a `confirmed_fraud` for U: the next flag shows no demotion.
+5. Add a `confirmed_fraud` for U: the next flag shows no demotion and cites
+   the veto if false-positive history would otherwise have lowered priority.
 
 ## 9. Error handling
 

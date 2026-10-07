@@ -135,11 +135,18 @@ def test_unfired_rule_with_fp_history_is_not_adjusted():
     assert adj is None and score == res.total_score
 
 
-def test_veto_removes_all_demotion():
+def test_veto_cites_suppressed_demotion_without_changing_priority():
     res = _result({"geo_impossibility": 3.0})
     inputs = PriorityInputs(veto=True, false_positives={"geo_impossibility": (9, [1])})
     score, adj = compute_priority(res, CFG, inputs)
-    assert adj is None and score == res.total_score
+    assert score == res.total_score
+    assert adj == {
+        "formula_version": 1, "decay": 0.8, "floor": 0.5, "veto": True,
+        "per_rule": [{
+            "rule_name": "geo_impossibility", "prior_false_positive_count": 9,
+            "prior_false_positive_case_ids": [1], "factor": 1.0,
+        }],
+    }
 
 
 def test_disabled_rule_not_demoted_or_combined():
@@ -343,13 +350,20 @@ def test_case_inserted_published_and_total_score_untouched(conn):
 
 
 def test_any_confirmed_fraud_vetoes_all_demotion(conn):
-    for _ in range(3):
+    prior_ids = [
         _prior_case(conn, USER, "false_positive", fired=["geo_impossibility"])
+        for _ in range(3)
+    ]
     _prior_case(conn, USER, "confirmed_fraud", fired=["amount_baseline"])  # a DIFFERENT rule still vetoes
     row = _run(conn, _seed_geo(conn))
     assert row is not None
     assert row["priority_score"] == row["total_score"]
-    assert row["priority_adjustment"] is None
+    adjustment = row["priority_adjustment"]
+    assert adjustment["veto"] is True
+    assert adjustment["per_rule"] == [{
+        "rule_name": "geo_impossibility", "prior_false_positive_count": 3,
+        "prior_false_positive_case_ids": prior_ids, "factor": 1.0,
+    }]
 
 
 def test_other_users_cases_do_not_count(conn):
