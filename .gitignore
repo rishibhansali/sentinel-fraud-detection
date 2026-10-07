@@ -15,6 +15,7 @@ build/
 # Data (raw + processed datasets are never committed)
 data/raw/
 data/processed/
+artifacts/ml/
 
 # Env
 .env
