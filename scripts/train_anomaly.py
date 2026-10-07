@@ -123,6 +123,7 @@ def train_and_write(
             "pandas": version("pandas"),
             "scikit_learn": version("scikit-learn"),
             "joblib": version("joblib"),
+            "scipy": version("scipy"),
         },
         "code_revision": revision,
     }

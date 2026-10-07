@@ -35,6 +35,7 @@ def test_artifact_contains_reproducible_contract(tmp_path):
     assert manifest["score_orientation"] == "higher_is_more_anomalous"
     assert manifest["threshold"] == metrics["threshold"]
     assert manifest["dependency_versions"]["scikit_learn"]
+    assert manifest["dependency_versions"]["scipy"] == "1.18.1"
     assert manifest["code_revision"] == subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
