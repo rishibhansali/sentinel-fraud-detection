@@ -1,14 +1,17 @@
 """Reconnecting Redis pub/sub subscribers (spec 5.2, 7.2).
 
-Two variants with identical semantics:
+Two variants with the same message delivery behavior:
   * AsyncChannelSubscriber   - redis.asyncio, for the FastAPI lifespan.
   * ThreadedChannelSubscriber - daemon thread, for the synchronous pipeline.
 
 Semantics: connect, subscribe, dispatch each JSON-decoded payload to
 on_message. Any connection error triggers reconnect with exponential backoff
 (0.1s doubling, cap 5s, reset after a successfully dispatched message).
-on_reconnect fires each time a subscription is re-established after the
-first. Malformed JSON and on_message exceptions are logged and skipped.
+The async subscriber also calls on_reconnect on its first confirmed
+subscription: the API may already have WebSocket clients from a Redis startup
+outage, and they need a repair signal. The threaded subscriber calls it only
+on later subscriptions. Malformed JSON and on_message exceptions are logged
+and skipped.
 A fresh connection is created per attempt, so a server-side kill is always
 observed as a disconnect and a resubscription.
 """
@@ -88,7 +91,7 @@ class AsyncChannelSubscriber:
                         self._subscriptions += 1
                         self._ready.set()
                         backoff = BACKOFF_START  # a confirmed subscription is a healthy connection
-                        if self._subscriptions > 1 and self.on_reconnect:
+                        if self.on_reconnect:
                             await self._call(self.on_reconnect, what="on_reconnect")
                     elif msg["type"] == "message":
                         payload = _decode(self.channel, msg["data"])

@@ -6,15 +6,19 @@ truth.
 
 Client protocol (spec 5.3):
   1. Connect the WebSocket FIRST. The server sends {"type": "hello"}.
-  2. Then call GET /cases?since_id=N (N = last case id seen) to repair
-     anything missed before/while connecting.
-  3. Dedupe by case id (a pushed case may also arrive via REST).
+  2. Then page GET /cases?since_id=0 to reconcile ALL case summaries,
+     including updates to ids already seen. Apply each summary by replacing
+     the cached value for its id; buffer concurrent pushes until paging ends.
+  3. After a resync hint or reconnect, repeat the full scan. An incremental
+     GET /cases?since_id=N (N = last case id seen) only finds new cases.
 Server messages, forwarded verbatim from Redis:
   {"type": "case.created"|"case.updated", "case": {...}}
 plus {"type": "hello"}, an application-level {"type": "heartbeat"} every
 heartbeat interval (default 15s), and {"type": "resync"}, meaning pushes may
-have been missed (Redis reconnected): repair via since_id. A slow client is
-closed with 1013; reconnect and repair. Client text messages are ignored.
+have been missed (Redis reconnected): repeat the full scan. A slow client is
+closed with 1013; reconnect and repair. Periodic full reconciliation also
+repairs a publish failure that does not disconnect Redis. Client text messages
+are ignored.
 
 LIMITATION: the since_id cursor (see `query_since_id` in app/api/cases.py)
 assumes a SINGLE writer so commit order equals id order; with concurrent

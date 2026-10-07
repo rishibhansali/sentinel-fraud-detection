@@ -164,7 +164,7 @@ def _insert_case(conn, n):
 
 
 class RefClient:
-    """Reference client for spec 5.3: connect WS -> repair via since_id -> dedupe by id."""
+    """Reference client: incremental creations, full reconciliation after a gap."""
 
     def __init__(self, srv, last_seen):
         self.srv, self.last_seen = srv, last_seen
@@ -174,20 +174,20 @@ class RefClient:
     def apply(self, case):
         if case["id"] in self.seen:
             self.duplicates += 1
-            return
         self.seen[case["id"]] = case
         self.last_seen = max(self.last_seen, case["id"])
 
-    async def repair(self, http):
+    async def repair(self, http, full=False):
+        cursor = 0 if full else self.last_seen
         while True:
-            r = await http.get(f"{self.srv.http_url}/cases", params={"since_id": self.last_seen})
+            r = await http.get(f"{self.srv.http_url}/cases", params={"since_id": cursor})
             r.raise_for_status()
             body = r.json()
             for c in body["items"]:
                 self.apply(c)
             if body["next_since_id"] is None:
                 return
-            self.last_seen = body["next_since_id"]
+            cursor = body["next_since_id"]
 
 
 def test_repair_protocol_end_to_end(live_server, conn):
@@ -201,14 +201,33 @@ def test_repair_protocol_end_to_end(live_server, conn):
         async with websockets.connect(live_server.ws_url) as ws, httpx.AsyncClient(timeout=5) as http:
             assert await recv(ws) == {"type": "hello"}  # 1. WS first
             missed = await asyncio.to_thread(_insert_case, conn, 1)  # push never published
-            await ref.repair(http)  # 2. repair over REST
+            await ref.repair(http, full=True)  # 2. full reconciliation over REST
             assert missed in ref.seen
-            # 3. a later push of the same case id is deduped by id
+            # 3. a later push of the same case id updates the stored summary
             publisher.publish_case_event("case.updated", summary(missed, status="in_review"))
             msg = await recv(ws)
             ref.apply(msg["case"])
             assert ref.duplicates == 1
+            assert ref.seen[missed]["status"] == "in_review"
             assert list(ref.seen).count(missed) == 1
+
+    run(go())
+
+
+def test_full_repair_recovers_missed_update(live_server, conn):
+    cid = _insert_case(conn, 2)
+    ref = RefClient(live_server, cid)
+
+    async def go():
+        async with websockets.connect(live_server.ws_url) as ws, httpx.AsyncClient(timeout=5) as http:
+            assert await recv(ws) == {"type": "hello"}
+            await ref.repair(http, full=True)
+            assert ref.seen[cid]["status"] == "open"
+            r = await http.post(f"{live_server.http_url}/cases/{cid}/claim", json={"analyst": "alice"})
+            assert r.status_code == 200
+            # Simulate a lost case.updated push by deliberately not applying it.
+            await ref.repair(http, full=True)
+            assert ref.seen[cid]["status"] == "in_review"
 
     run(go())
 
@@ -225,3 +244,16 @@ def test_redis_down_startup_and_shutdown(live_server_factory):
 
     run(go())
     # fixture teardown asserts a clean shutdown
+
+
+def test_first_subscription_after_startup_outage_signals_resync(live_server_factory):
+    srv = live_server_factory(wait_subscribed=False, redis_url_override="redis://localhost:6390/0")
+
+    async def go():
+        async with websockets.connect(srv.ws_url) as ws:
+            assert await recv(ws) == {"type": "hello"}
+            srv.app.state.case_subscriber.url = redis_url()
+            await asyncio.to_thread(srv.wait_subscribed)
+            assert await recv(ws, 5) == {"type": "resync"}
+
+    run(go())

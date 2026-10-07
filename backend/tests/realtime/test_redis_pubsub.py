@@ -212,9 +212,9 @@ def test_async_reconnect_after_server_kill(channel):
         sub = AsyncChannelSubscriber(URL, channel, got.append, on_reconnect=on_reconnect)
         task = asyncio.create_task(sub.run())
         await asyncio.wait_for(sub.wait_ready(), 5)
-        assert reconnects == []
+        assert await _await(lambda: len(reconnects) == 1)
         await asyncio.to_thread(_kill_pubsub_clients)
-        assert await _await(lambda: reconnects)
+        assert await _await(lambda: len(reconnects) == 2)
         await asyncio.to_thread(_raw_publish, channel, json.dumps({"after": 1}))
         await _await(lambda: got)
         sub.stop()
