@@ -69,6 +69,7 @@ LOAD_WARMUP_SECONDS = 3.0
 TIMED_WINDOW_SECONDS = 15.0
 # Clear of Task 4's own test ranges (which only use LOAD_GENERATOR_ID_RANGE_START + 0..~4600).
 LOAD_ID_START = LOAD_GENERATOR_ID_RANGE_START + 1_000_000
+LOAD_ID_END = LOAD_ID_START + 999_999  # this benchmark's slice, within the generator reservation
 
 # Phase 2's documented static-table numbers (BENCHMARK.md) -- the actual fixed
 # reference point for the regression check. The regression comparison is
@@ -115,8 +116,8 @@ def cleanup_load_generator_rows() -> None:
     conn = psycopg2.connect(DB_DSN)
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM flagged_cases WHERE transaction_id >= %s;", (LOAD_ID_START,))
-            cur.execute("DELETE FROM transactions WHERE id >= %s;", (LOAD_ID_START,))
+            cur.execute("DELETE FROM flagged_cases WHERE transaction_id BETWEEN %s AND %s;", (LOAD_ID_START, LOAD_ID_END))
+            cur.execute("DELETE FROM transactions WHERE id BETWEEN %s AND %s;", (LOAD_ID_START, LOAD_ID_END))
         conn.commit()
     finally:
         conn.close()

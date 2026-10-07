@@ -59,7 +59,7 @@ def db_conn():
         yield conn
     finally:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM transactions WHERE id >= %s;", (TEST_ID_BASE,))
+            cur.execute("DELETE FROM transactions WHERE id BETWEEN %s AND %s;", (TEST_ID_BASE, TEST_ID_BASE + 999))
         conn.commit()
         conn.close()
 
