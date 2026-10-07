@@ -119,7 +119,7 @@ def test_invalid_inputs_fail(values, amount):
 - [x] **Step 1: Confirm the original CSV.** `wc -l data/raw/creditcard.csv` must be 284808 including the header; the CLI must independently check 284807 data rows and record the SHA-256. If absent, download **only** the CSV using the documented source; never run `scripts/ingest.py` or its `main()`.
 - [x] **Step 2: Run twice.** `scripts/.venv/bin/python scripts/train_anomaly.py --source data/raw/creditcard.csv --output-root artifacts/ml` two times. Compare `metrics.json`, manifest split counts, threshold, feature order, and source hash. Any difference outside explicit numerical tolerance is a bug; do not adjust the test set to improve the numbers.
 - [x] **Step 3: Prove external state unchanged.** Read Postgres counts for `transactions`, `flagged_cases`, `case_feedback` and `rules_config` before and after the two runs, plus Redis `PING`; require equality. This is read-only observation, not a mocked check.
-- [ ] **Step 4: Run full checks in the primary checkout after integration:** `cd backend && .venv/bin/python -m pytest`, `scripts/.venv/bin/python -m pytest scripts/tests`, and `backend/.venv/bin/python -m compileall -q backend/app scripts`; then review `git diff --check`. Record actual counts and paths in the PR.
+- [x] **Step 4: Run full checks in the primary checkout after integration:** `cd backend && .venv/bin/python -m pytest`, `scripts/.venv/bin/python -m pytest scripts/tests`, and `backend/.venv/bin/python -m compileall -q backend/app scripts`; then review `git diff --check`. Record actual counts and paths in the PR.
 
 ## Verification record (2026-10-07)
 
@@ -128,4 +128,4 @@ def test_invalid_inputs_fail(values, amount):
 - Two runs at code revision `0f32c6b0079885ec037e3291b7837842af9ac63c` produced byte-equivalent JSON manifests and metrics, including identical validation/test score hashes. Ignored run directories: `artifacts/ml/20261007T154807604431Z-76274b691b16-0f32c6b00798` and `artifacts/ml/20261007T154811057002Z-76274b691b16-0f32c6b00798`.
 - Test AP 0.291836, ROC-AUC 0.980504, precision 0.191176, recall 0.527027, alert rate 0.004775 at the frozen validation threshold 0.11433466487225132. These are descriptive held-out findings, not a production acceptance floor.
 - Postgres counts before and after both runs: `transactions=3132877`, `flagged_cases=0`, `case_feedback=0`, `rules_config=3`; Redis `PING` returned `PONG` both times.
-- Primary-checkout verification remains the integration gate after merging this branch.
+- After PR #7 merged into `main` at `725016f1d5280daf930358a6c94a397c0803c748`, the primary checkout passed 260 backend tests, 20 scripts tests, compileall, `pip check`, and `git diff --check`. A final real-data run on `main` reproduced the test AP and ROC-AUC above and left its ignored artifact at `artifacts/ml/20261007T155206536532Z-76274b691b16-725016f1d528`.
