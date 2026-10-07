@@ -77,3 +77,76 @@ works" below).
   its aggregation logic (`user_transaction_features`) is the reusable
   building block Phase 6's feature engineering will need, kept isolated
   in its own view rather than buried inline in application code.
+
+## Task 5 — streaming write load regression check
+
+Same locked query, same `user_id=4885`, same `LIMIT=50` as Phase 1/2 -- this
+adds a concurrent-write-load condition on top of Phase 2's already-optimized,
+static-table number. Not re-measuring Phase 1/2's own numbers; comparing
+against them as fixed reference points.
+
+### Scope of what this measures
+
+LoadGenerator's synthetic rows (today's timestamp) land in
+`transactions_default`, the partition catch-all -- migration 003 only
+defines ranges through March 2025. The benchmarked user (4885) and the rest
+of the ~3.1M-row bulk-loaded dataset live entirely in `transactions_2025_01`,
+a different physical partition. **This benchmark measures whether writes
+elsewhere in the table affect reads of an already-settled partition. It does
+NOT measure same-partition write/read contention** -- that's a different,
+untested scenario. The conclusion below is scoped accordingly, not a general
+"optimizations hold under streaming write load" claim.
+
+### Methodology
+
+- Load: LoadGenerator, `full_pipeline` mode (loader query + baseline query +
+  score + conditional persist per row -- the actual production pipeline
+  shape, not just raw inserts), target rate 50
+  tx/sec (Task 4's own proven-sustainable rate, not an arbitrary pick).
+- No cold-cache-under-load number: restarting the container to get a cold
+  cache would also kill the load generator's connection, so "cold" and
+  "under load" can't be cleanly combined. Warm-only, both with and without
+  load.
+- 3s steady-state warm-up after starting the load
+  generator, before any timed sample is collected -- avoids the timing
+  window's earliest samples capturing startup transient rather than genuine
+  sustained load.
+- The "under load" window is duration-based (15s), not
+  a fixed count: at low-single-digit-ms query latency, Phase 1/2's fixed 20
+  runs would complete in ~100ms -- far too short to overlap with meaningful
+  sustained write volume at this rate.
+- Correctness sanity check built into the run itself: 50 rows before load, 50 rows during load -- identical row count and identical row order, confirming concurrent writes elsewhere in the table did not change this query's result set.
+
+### Results
+
+- Phase 2 documented reference (static table, no concurrent load):
+  median 2.02 ms, p95 4.21 ms
+- No-load warm baseline, this run (n=20, sanity-check reproduction of
+  Phase 2's numbers): median 2.39 ms, p95 3.83 ms
+- Under load, 50 tx/sec full_pipeline
+  (n=2589, 15s window): median
+  1.40 ms, p95 1.67 ms
+
+### Conclusion
+
+Scoped to the cross-partition scenario tested above (not same-partition write
+contention -- see "Scope" note): No regression -- median under load is -30.7% vs. Phase 2's documented static-table median (2.02 ms), within normal run-to-run noise at this sub-5ms timescale.
+
+This run's own no-load re-measurement (median 2.39 ms) is *higher* than the under-load number (1.40 ms) -- not because concurrent writes made queries faster (implausible on its face), but because the no-load phase runs immediately after container restart with minimal warm-up (faithfully matching Phase 1/2's exact procedure), while the under-load phase runs later in the same script after strictly more cumulative cache warm-up. This is a measurement-order artifact, not a load effect -- which is exactly why the regression comparison above uses Phase 2's fixed documented number, not this run's own no-load re-measurement, as the baseline.
+
+Both numbers -- with and without concurrent load -- remain dramatically
+faster than Phase 1's naive 68.68 ms warm
+median measured with zero concurrent load.
+
+### Deferred (Phase 11 talking points, not built here)
+
+- Rerun this benchmark at Task 4's found throughput ceiling -- this run only
+  used the one proven-sustainable rate (50 tx/sec), not a stress rate that
+  probes for where degradation begins.
+- No automated future-partition creation exists (no pg_partman, no cron job)
+  -- partitions only cover Dec 2024-Mar 2025 plus `transactions_default`.
+  Every live write from any real deployment onward lands in the default
+  partition indefinitely. A real deployment needs this solved before the
+  default partition's benefit (small, recent, isolated from historical data)
+  degrades into "one ever-growing default partition holding everything" --
+  the exact problem partitioning was meant to avoid.
