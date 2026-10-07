@@ -1,3 +1,11 @@
+const INTEGER_PARAMS = {
+  velocity: new Set(['window_minutes', 'threshold_count']),
+}
+
+export function isIntegerParam(ruleName, key) {
+  return INTEGER_PARAMS[ruleName]?.has(key) || false
+}
+
 export function makeRuleDraft(rule) {
   return {
     enabled: rule.enabled,
@@ -27,7 +35,7 @@ export function buildRulePatch(rule, draft, analyst) {
 
   const changedParams = {}
   for (const [key, original] of Object.entries(rule.params)) {
-    const value = numeric(draft.params[key], key.replaceAll('_', ' '), Number.isInteger(original))
+    const value = numeric(draft.params[key], key.replaceAll('_', ' '), isIntegerParam(rule.rule_name, key))
     if (value !== original) changedParams[key] = value
   }
   if (Object.keys(changedParams).length) body.params = changedParams

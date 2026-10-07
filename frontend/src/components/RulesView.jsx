@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getRuleHistory, getRules, getRuleStats, patchRule } from '../api.js'
 import { formatDate, ruleLabel } from '../format.js'
-import { buildRulePatch, makeRuleDraft } from '../ruleForm.js'
+import { buildRulePatch, isIntegerParam, makeRuleDraft } from '../ruleForm.js'
 
 function RuleCard({ rule, stats, analyst, onRefresh }) {
   const [draft, setDraft] = useState(() => makeRuleDraft(rule))
@@ -20,15 +20,18 @@ function RuleCard({ rule, stats, analyst, onRefresh }) {
     catch (cause) { setError(cause.message); return }
     if (!body) { setMessage('No changes to save.'); return }
     setSaving(true)
+    let result
     try {
-      const result = await patchRule(rule.rule_name, body)
-      setMessage(result.affects_flagging ? 'Saved. This change can affect which future transactions are flagged.' : 'Saved. Queue ranking may change for future cases.')
-      await onRefresh()
+      result = await patchRule(rule.rule_name, body)
     } catch (cause) {
       setError(cause.message || 'Could not save this rule')
-    } finally {
       setSaving(false)
+      return
     }
+    setMessage(result.affects_flagging ? 'Saved. This change can affect which future transactions are flagged.' : 'Saved. Queue ranking may change for future cases.')
+    try { await onRefresh() }
+    catch { setMessage('Saved, but current rule data could not be refreshed. Retry refresh above.') }
+    finally { setSaving(false) }
   }
 
   const changed = JSON.stringify(draft) !== JSON.stringify(makeRuleDraft(rule))
@@ -53,8 +56,8 @@ function RuleCard({ rule, stats, analyst, onRefresh }) {
         <input type="number" min="0" step="any" value={draft.weight}
           onChange={event => setDraft(current => ({ ...current, weight: event.target.value }))} />
       </label>
-      {Object.entries(rule.params).map(([key, original]) => <label key={key}>{ruleLabel(key)}
-        <input type="number" step={Number.isInteger(original) ? '1' : 'any'}
+      {Object.entries(rule.params).map(([key]) => <label key={key}>{ruleLabel(key)}
+        <input type="number" step={isIntegerParam(rule.rule_name, key) ? '1' : 'any'}
           value={draft.params[key] ?? ''}
           onChange={event => setDraft(current => ({ ...current,
             params: { ...current.params, [key]: event.target.value },
