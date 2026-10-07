@@ -24,21 +24,28 @@
 
 ## Task 1 — Artifact compatibility and pure scoring
 
-- [ ] Add pinned `numpy==2.3.5`, `scipy==1.18.1`, `scikit-learn==1.9.1`, `joblib==1.5.2` to `backend/requirements.txt`; install only in `backend/.venv`.
-- [ ] Write failing tests that create a Phase 6-shaped local model and manifest. Test score `-decision_function` on shared `extract_features`, and reject missing file, bad hash, wrong features/transform/model settings/orientation, invalid threshold, incompatible runtime versions, and unfitted/wrong-width model. Artifact fixtures live in `tmp_path`, not tracked data.
-- [ ] Implement `load_artifact(path: Path) -> AnomalyScorer` in `backend/app/ml/scorer.py`. Validate manifest JSON and SHA-256 before `joblib.load`, then verify fitted model type/settings/width. Raise `ValueError` with a clear artifact reason. Expose `model_sha256` and `score_values(v_values, amount) -> float`; ensure finite result.
-- [ ] Run focused backend ML tests and full backend suite, then commit the loader/tests/dependency pin.
+- [x] Add pinned `numpy==2.3.5`, `scipy==1.18.1`, `scikit-learn==1.9.1`, `joblib==1.5.2` to `backend/requirements.txt`; install only in `backend/.venv`.
+- [x] Write failing tests that create a Phase 6-shaped local model and manifest. Test score `-decision_function` on shared `extract_features`, and reject missing file, bad hash, wrong features/transform/model settings/orientation, invalid threshold, incompatible runtime versions, and unfitted/wrong-width model. Artifact fixtures live in `tmp_path`, not tracked data.
+- [x] Implement `load_artifact(path: Path) -> AnomalyScorer` in `backend/app/ml/scorer.py`. Validate manifest JSON and SHA-256 before `joblib.load`, then verify fitted model type/settings/width. Raise `ValueError` with a clear artifact reason. Expose `model_sha256` and `score_values(v_values, amount) -> float`; ensure finite result.
+- [x] Run focused backend ML tests and full backend suite, then commit the loader/tests/dependency pin.
 
 ## Task 2 — Post-commit annotation with failure isolation
 
-- [ ] Reserve `280_000_000..280_009_999` for integration tests and `281_000_000..281_009_999` for the real CLI smoke, with distinct negative user IDs in `reserved_ranges.py`; cleanup deletes case feedback before cases, then transactions, and touches only the owning range.
-- [ ] Write failing integration tests using real Postgres/Redis. Seed a NYC→London geo-rule pair with distinct `v1`–`v28`/amount; pass an injected scorer spy. Assert only the new flagged case is scored, `ml_anomaly_score` persists, the created event observes that committed value, rule/priority scores remain unchanged, and replaying the same transaction does not rescore or republish. Seed an unflagged transaction and assert no scorer call. Inject scorer failure and assert case persists with NULL, publish still occurs, and log identifies case/transaction IDs.
-- [ ] Add an optional `anomaly_scorer` callable to `make_pipeline_callback`. After a rule-created case commits, query that transaction's V fields/amount, call the scorer, require finite output, update only `ml_anomaly_score`, and commit. On any annotation exception, roll back only that second transaction, log, then continue to existing case read/publish. Leave the disabled path and rule engine untouched.
-- [ ] Run focused real-service tests and full backend suite, then commit.
+- [x] Reserve `280_000_000..280_009_999` for integration tests and `281_000_000..281_009_999` for the real CLI smoke, with distinct negative user IDs in `reserved_ranges.py`; cleanup deletes case feedback before cases, then transactions, and touches only the owning range.
+- [x] Write failing integration tests using real Postgres/Redis. Seed a NYC→London geo-rule pair with distinct `v1`–`v28`/amount; pass an injected scorer spy. Assert only the new flagged case is scored, `ml_anomaly_score` persists, the created event observes that committed value, rule/priority scores remain unchanged, and replaying the same transaction does not rescore or republish. Seed an unflagged transaction and assert no scorer call. Inject scorer failure and assert case persists with NULL, publish still occurs, and log identifies case/transaction IDs.
+- [x] Add an optional `anomaly_scorer` callable to `make_pipeline_callback`. After a rule-created case commits, query that transaction's V fields/amount, call the scorer, require finite output, update only `ml_anomaly_score`, and commit. On any annotation exception, roll back only that second transaction, log, then continue to existing case read/publish. Leave the disabled path and rule engine untouched.
+- [x] Run focused real-service tests and full backend suite, then commit.
 
 ## Task 3 — CLI, documentation, and real artifact smoke
 
-- [ ] Add `--ml-artifact-dir PATH` to `run_pipeline.py`; load before rules/harness startup, pass scorer method to the callback, and log model hash. Test `--help` and startup rejection for a nonexistent/incompatible path; omit flag to preserve current behavior.
-- [ ] Update README with backend local dependency setup, Phase 6 artifact selection, exact opt-in command, fail-open NULL behavior, and no backfill. Update roadmap status for completed Phase 6 and Phase 7.
-- [ ] Run a real CLI subprocess using the primary checkout's Phase 6 artifact and fresh reserved 281_000_000-range transactions, then query the resulting case for a finite score and unchanged rule gate. Clean case/transactions afterward; capture pre/post counts. Run `backend/.venv/bin/python -m compileall -q backend/app scripts`, `git diff --check`, focused and full suites. Commit docs/CLI/tests.
+- [x] Add `--ml-artifact-dir PATH` to `run_pipeline.py`; load before rules/harness startup, pass scorer method to the callback, and log model hash. Test `--help` and startup rejection for a nonexistent/incompatible path; omit flag to preserve current behavior.
+- [x] Update README with backend local dependency setup, Phase 6 artifact selection, exact opt-in command, fail-open NULL behavior, and no backfill. Update roadmap status for completed Phase 6 and Phase 7.
+- [x] Run a real CLI subprocess using the primary checkout's Phase 6 artifact and fresh reserved 281_000_000-range transactions, then query the resulting case for a finite score and unchanged rule gate. Clean case/transactions afterward; capture pre/post counts. Run `backend/.venv/bin/python -m compileall -q backend/app scripts`, `git diff --check`, focused and full suites. Commit docs/CLI/tests.
 - [ ] Merge reviewed PR, then run full backend suite, scripts suite, build checks, and a real CLI smoke from **main** per `AGENTS.md`. Record the actual results in this plan/PR, restore the user's stashed notes, and remove the worktree/branch.
+
+## Worktree verification (2026-10-07)
+
+- Baseline: 260 backend tests passed with Docker Postgres and Redis.
+- After artifact loading: 272 backend tests passed; after case annotation: 275; after CLI wiring: 277. `compileall`, `pip check`, and `git diff --check` passed.
+- Real CLI smoke used the primary checkout's Phase 6 artifact at `artifacts/ml/20261007T155206536532Z-76274b691b16-725016f1d528` and reserved transactions 281,000,001–281,000,002. The geo rule created exactly one case; the stored finite anomaly score was `0.23270480525753767`, and startup logged the artifact hash. Rule and priority scores remained equal. Cleanup restored `(transactions, flagged_cases, case_feedback, rules_config)` counts to `(3132877, 0, 0, 3)`; Redis returned PONG.
+- The `main` integration gate remains to be run after PR merge.
