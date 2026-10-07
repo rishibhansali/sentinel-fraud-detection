@@ -28,7 +28,12 @@ HISTORY_DEFAULT_LIMIT, HISTORY_MAX_LIMIT = 50, 200
 
 
 def _is_num(v: Any) -> bool:
-    return not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v)
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return False
+    try:
+        return math.isfinite(v)
+    except OverflowError:
+        return False  # an integer too large for the database's float column
 
 
 def _int_check(lo=None, hi=None):
