@@ -5,6 +5,7 @@ Ctrl+C (SIGINT), not a one-shot script.
 """
 import argparse
 import logging
+import os
 import signal
 from pathlib import Path
 
@@ -30,6 +31,8 @@ def main() -> None:
                         help="safety-net poll interval for rules hot reload")
     parser.add_argument("--ml-artifact-dir", type=Path, default=None,
                         help="explicit trusted Phase 6 run directory; annotate newly flagged cases only")
+    parser.add_argument("--claude-summaries", action="store_true",
+                        help="send newly rule-created cases to Claude for optional explanations")
     args = parser.parse_args()
 
     anomaly_scorer = None
@@ -44,11 +47,21 @@ def main() -> None:
         logging.basicConfig(level=logging.INFO)
         log.info("loaded anomaly artifact sha256=%s", artifact.model_sha256)
 
+    case_summarizer = None
+    if args.claude_summaries:
+        from app.summaries.claude import ClaudeSummarizer
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key.strip():
+            parser.error("ANTHROPIC_API_KEY is required for --claude-summaries")
+        case_summarizer = ClaudeSummarizer(api_key)
+
     rules = RulesProvider(args.dsn)
     rules.start_hot_reload(poll_interval=args.rules_poll_seconds)
     processing_conn = psycopg2.connect(args.dsn)
     on_transaction = make_pipeline_callback(
-        processing_conn, rules, row_cap=args.row_cap, anomaly_scorer=anomaly_scorer
+        processing_conn, rules, row_cap=args.row_cap, anomaly_scorer=anomaly_scorer,
+        case_summarizer=case_summarizer,
     )
 
     harness = ReplayHarness(
@@ -69,6 +82,8 @@ def main() -> None:
     finally:
         rules.stop_hot_reload()
         processing_conn.close()
+        if case_summarizer is not None:
+            case_summarizer.close()
 
 
 if __name__ == "__main__":
