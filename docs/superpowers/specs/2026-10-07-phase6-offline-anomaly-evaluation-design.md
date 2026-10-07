@@ -88,14 +88,15 @@ rollup cannot satisfy that contract and must not be reused for this model.
   model settings before scoring test rows. Report the actual test alert rate,
   which may differ from 0.5% if the score distribution shifts or ties occur.
 - Report validation and test sample counts, class prevalence, average
-  precision (PR-AUC), ROC-AUC, precision, recall, alert count/rate, and the
+  precision (AP), ROC-AUC, precision, recall, alert count/rate, and the
   confusion counts at the fixed threshold. Show prevalence as the no-skill
-  PR-AUC reference. No minimum metric is required to pass Phase 6: a weak
+  AP reference. No minimum metric is required to pass Phase 6: a weak
   result is a valid finding and does not authorize live integration.
 - Compute test metrics once for the finalized model. Do not select features,
-  hyperparameters, or thresholds using test labels. If a future iteration
-  needs model selection, record a new experiment and keep the test set sealed
-  until its configuration is frozen.
+  hyperparameters, or thresholds using test labels. Seeing the test result
+  does not reset that holdout for a later candidate: later tuning uses train
+  and validation only, and an independent untouched holdout is needed for a
+  new final comparison.
 
 These controls prevent replica overlap and model-selection leakage in this
 project. They do not make the random split a prospective time-based test. The
