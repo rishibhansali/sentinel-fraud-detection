@@ -1,11 +1,13 @@
 """Wires ReplayHarness output through the frozen detection engine, persists
-flagged cases, and announces each newly inserted case on Redis (`case.created`,
-after commit, best-effort: a Redis outage never affects detection). Each case
-is stamped with the rules_config_version of the single RulesProvider snapshot
-used to score it. No ML score or Claude summary here; Phase 7/8 own those.
+flagged cases, optionally annotates them after commit, and announces each
+newly inserted case on Redis (`case.created`, after commit, best-effort).
+Each case is stamped with the rules_config_version of the single
+RulesProvider snapshot used to score it. Only rules decide case creation.
 """
 import json
 import logging
+import math
+from collections.abc import Sequence
 from typing import Callable, Optional, Union
 
 import psycopg2.extras
@@ -31,6 +33,10 @@ _INSERT_FLAGGED_CASE = """
 
 _SELECT_STORED = "SELECT total_score, rules_config_version FROM flagged_cases WHERE transaction_id = %s;"
 _SELECT_CASE = "SELECT * FROM flagged_cases WHERE id = %s;"
+_SELECT_ML_INPUTS = (
+    "SELECT " + ", ".join(f"v{i}" for i in range(1, 29)) + ", amount FROM transactions WHERE id = %s;"
+)
+_UPDATE_ML_SCORE = "UPDATE flagged_cases SET ml_anomaly_score = %s WHERE id = %s;"
 
 
 def is_flagged(result: ScoreResult) -> bool:
@@ -91,9 +97,11 @@ def make_pipeline_callback(
     conn,
     rules: Union[RulesProvider, dict[str, RuleConfig]],
     row_cap: int = DEFAULT_ROW_CAP,
+    anomaly_scorer: Callable[[Sequence[object], object], float] | None = None,
 ) -> Callable[[Transaction], None]:
     """Builds the callback passed to ReplayHarness.start(): loader -> baseline
-    -> score_transaction() -> persist-if-flagged -> commit -> publish, all
+    -> score_transaction() -> persist-if-flagged -> commit -> optional
+    anomaly annotation -> publish, all
     against a single caller-owned connection opened once by the driver.
 
     `rules` is a RulesProvider, or a plain dict (wrapped in a static provider
@@ -129,6 +137,24 @@ def make_pipeline_callback(
         conn.commit()
 
         if case_id is not None:
+            if anomaly_scorer is not None:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(_SELECT_ML_INPUTS, (transaction.id,))
+                        row = cur.fetchone()
+                        if row is None:
+                            raise ValueError(f"transaction {transaction.id} missing for anomaly annotation")
+                        anomaly_score = float(anomaly_scorer(row[:28], row[28]))
+                        if not math.isfinite(anomaly_score):
+                            raise ValueError("anomaly scorer returned a nonfinite score")
+                        cur.execute(_UPDATE_ML_SCORE, (anomaly_score, case_id))
+                    conn.commit()
+                except Exception as exc:
+                    conn.rollback()
+                    log.warning(
+                        "anomaly annotation failed for case %s transaction %s: %s",
+                        case_id, transaction.id, exc,
+                    )
             # Only after a successful commit, only for a newly inserted row.
             # publish_case_event never raises.
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
