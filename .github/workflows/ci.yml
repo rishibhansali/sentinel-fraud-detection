@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests and smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SENTINEL_DB_DSN: postgresql://sentinel:sentinel_dev_only@localhost:5432/sentinel
+      REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: sentinel
+          POSTGRES_USER: sentinel
+          POSTGRES_PASSWORD: sentinel_dev_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sentinel -d sentinel"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install backend dependencies in project venv
+        run: |
+          python -m venv backend/.venv
+          backend/.venv/bin/python -m pip install -r backend/requirements.txt
+      - name: Apply migrations 001–008
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          for migration in infra/migrations/*.sql; do
+            echo "Applying $migration"
+            docker exec -i "$POSTGRES_CONTAINER" psql -U sentinel -d sentinel -v ON_ERROR_STOP=1 < "$migration"
+          done
+      - name: Run backend suite
+        working-directory: backend
+        run: .venv/bin/python -m pytest
+      - name: Run real API and pipeline smoke
+        run: backend/.venv/bin/python scripts/smoke_phase5.py
+
+  frontend:
+    name: Frontend tests and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Run frontend tests
+        run: npm test
+      - name: Build frontend
+        run: npm run build
