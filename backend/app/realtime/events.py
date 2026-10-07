@@ -21,6 +21,8 @@ def case_summary(row: dict) -> dict:
         "claimed_by": row.get("claimed_by"),
         "fired_rules": [r["rule_name"] for r in (rule_results or []) if r.get("fired")],
         "ml_anomaly_score": row.get("ml_anomaly_score"),
+        "ai_summary": row.get("ai_summary"),
+        "ai_summary_model": row.get("ai_summary_model"),
         "flagged_at": flagged_at,
     }
 

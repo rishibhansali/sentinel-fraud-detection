@@ -4,7 +4,7 @@ Real-time fraud detection and reviewer platform — a deterministic rules-based 
 
 ## Status
 
-The backend through Phase 7 is implemented: transaction replay and rules-based detection create cases in Postgres; analysts can claim, release, and decide cases through the REST API; Redis fans out case events to WebSocket clients; and rule changes hot-reload into the running pipeline. Phase 6 adds offline Isolation Forest evaluation on original source rows. Phase 7 can annotate newly rule-created cases with a compatible local model when explicitly enabled. There is no reviewer UI yet. The [roadmap](docs/ROADMAP.md) and [Phase 7 design](docs/superpowers/specs/2026-10-07-phase7-case-annotation-design.md) describe the boundaries.
+The backend through Phase 8 is implemented: transaction replay and rules-based detection create cases in Postgres; analysts can claim, release, and decide cases through the REST API; Redis fans out case events to WebSocket clients; and rule changes hot-reload into the running pipeline. Phase 6 adds offline Isolation Forest evaluation on original source rows. Phase 7 can annotate newly rule-created cases with a compatible local model when explicitly enabled. Phase 8 can add an optional Claude explanation after a rule-created case is committed. There is no reviewer UI yet. The [roadmap](docs/ROADMAP.md) and [Phase 8 design](docs/superpowers/specs/2026-10-07-phase8-case-summaries-design.md) describe the boundaries.
 
 **Detection uses no AI.** Every flag comes from an auditable rule. A later phase may add plain-English summaries after a case is flagged; those summaries will not determine whether a transaction is flagged.
 
@@ -39,7 +39,7 @@ python3.12 -m venv backend/.venv
 backend/.venv/bin/pip install -r backend/requirements.txt
 ```
 
-On a fresh database, apply `infra/migrations/001` through `007` once, in filename order:
+On a fresh database, apply `infra/migrations/001` through `008` once, in filename order:
 
 ```sh
 for migration in infra/migrations/*.sql; do
@@ -99,3 +99,14 @@ Install the pinned backend dependencies from the Setup section and start Postgre
 ```
 
 Replace the artifact path with your own Phase 6 run directory if different. Without `--ml-artifact-dir`, the pipeline remains rules-only and leaves `ml_anomaly_score` null. With it, a compatible model loads once at startup; an invalid artifact stops startup before replay. Newly rule-created cases receive `-decision_function` scores after case creation and before their `case.created` event. A higher score means more anomalous; it is not a fraud probability or a flagging threshold. Runtime scoring failures leave the case intact with a null score and are logged. Existing cases are not rescored, and there is no historical backfill. The rule engine remains the only case-creation gate.
+
+## Optional case explanations
+
+Apply migration 008 and set `ANTHROPIC_API_KEY` in the pipeline process environment. Then enable summaries explicitly:
+
+```sh
+(cd backend && .venv/bin/python -m app.pipeline.run_pipeline \
+  --start-id 1 --end-id 1000 --speed-multiplier 10 --claude-summaries)
+```
+
+The pipeline sends only a newly flagged transaction's id, timestamp, amount, total rule score, and fired-rule evidence to Anthropic's Messages API using pinned `claude-haiku-4-5-20251001`. It does not send user/card ids, the source fraud label, PCA features, analyst feedback, or the optional anomaly score. A valid explanation is stored as `ai_summary` with `ai_summary_model` and `ai_summary_generated_at`; the case detail, list, and live event expose it. The explanation is AI-generated context, not a fraud verdict. The external call has an eight-second timeout and no retry, so enabling it can slow replay and incur API charges. Any request/output error keeps the case and rule scores intact with null summary fields. Existing cases are not summarized again or backfilled. Without the flag, no Anthropic key or request is needed. The ML and summary options may be used together; neither changes which transactions are flagged.

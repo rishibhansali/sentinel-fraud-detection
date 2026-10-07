@@ -24,6 +24,8 @@ def _row(rule_results):
         "claimed_by": None,
         "rule_results": rule_results,
         "ml_anomaly_score": None,
+        "ai_summary": None,
+        "ai_summary_model": None,
         "flagged_at": datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
         "extra_column": "ignored",
     }
@@ -38,6 +40,7 @@ def test_case_summary_shape_and_fired_rules(as_str):
         "total_score": 60.0, "priority_score": 55.0, "status": "open",
         "claimed_by": None, "fired_rules": ["velocity", "amount"],
         "ml_anomaly_score": None,
+        "ai_summary": None, "ai_summary_model": None,
         "flagged_at": "2025-01-01T12:00:00+00:00",
     }
     json.dumps(s)  # JSON-serializable
@@ -47,6 +50,15 @@ def test_case_summary_flagged_at_string_passthrough():
     row = _row(RULES)
     row["flagged_at"] = "2025-01-01T12:00:00+00:00"
     assert case_summary(row)["flagged_at"] == "2025-01-01T12:00:00+00:00"
+
+
+def test_case_summary_carries_generated_text_and_model():
+    row = _row(RULES)
+    row["ai_summary"] = "Two rules fired for this transaction."
+    row["ai_summary_model"] = "claude-haiku-4-5-20251001"
+    summary = case_summary(row)
+    assert summary["ai_summary"] == row["ai_summary"]
+    assert summary["ai_summary_model"] == row["ai_summary_model"]
 
 
 @pytest.mark.parametrize("etype", ["case.created", "case.updated"])
