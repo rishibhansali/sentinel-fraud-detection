@@ -40,7 +40,8 @@ export function visibleCases(cases, status, query, limit = 50) {
   const needle = query.trim().toLowerCase()
   return cases
     .filter(item => status === 'all' ||
-      (status === 'pending' ? PENDING.has(item.status) : item.status === status))
+      (status === 'pending' ? PENDING.has(item.status) :
+        status === 'decided' ? !PENDING.has(item.status) : item.status === status))
     .filter(item => !needle || String(item.transaction_id).includes(needle) ||
       String(item.user_id).includes(needle) || String(item.id).includes(needle))
     .sort((a, b) => b.priority_score - a.priority_score || b.id - a.id)

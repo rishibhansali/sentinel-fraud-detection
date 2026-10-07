@@ -1,7 +1,7 @@
 # Sentinel roadmap
 
-Phases 1–8 are implemented. The [Phase 8 design](superpowers/specs/2026-10-07-phase8-case-summaries-design.md)
-defines the optional summary boundary. Earlier specs and progress logs record
+Phases 1–9 are implemented. The [Phase 9 design](superpowers/specs/2026-10-07-phase9-reviewer-ui-design.md)
+defines the reviewer interface boundary. Earlier specs and progress logs record
 the phase numbering in use when they were written; this page is the current
 allocation for the remaining work.
 
