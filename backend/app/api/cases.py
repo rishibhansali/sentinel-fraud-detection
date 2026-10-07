@@ -30,7 +30,7 @@ SINCE_DEFAULT_LIMIT, SINCE_MAX_LIMIT = 200, 500
 
 _LIST_COLS = (
     "id, transaction_id, transaction_ts, user_id, total_score, priority_score, "
-    "status, claimed_by, claimed_at, rule_results, ml_anomaly_score, "
+    "status, claimed_by, claimed_at, rule_results, ml_anomaly_score, ai_summary, ai_summary_model, "
     "rules_config_version, flagged_at"
 )
 

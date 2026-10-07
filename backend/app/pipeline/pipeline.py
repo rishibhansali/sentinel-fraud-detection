@@ -8,7 +8,7 @@ import json
 import logging
 import math
 from collections.abc import Sequence
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Protocol, Union
 
 import psycopg2.extras
 
@@ -38,6 +38,16 @@ _SELECT_ML_INPUTS = (
     + ", amount FROM transactions WHERE id = %s AND ts = %s;"
 )
 _UPDATE_ML_SCORE = "UPDATE flagged_cases SET ml_anomaly_score = %s WHERE id = %s;"
+_UPDATE_SUMMARY = (
+    "UPDATE flagged_cases SET ai_summary = %s, ai_summary_model = %s, "
+    "ai_summary_generated_at = clock_timestamp() WHERE id = %s AND ai_summary IS NULL;"
+)
+
+
+class CaseSummarizer(Protocol):
+    model: str
+
+    def summarize(self, row: dict, transaction: Transaction) -> str: ...
 
 
 def is_flagged(result: ScoreResult) -> bool:
@@ -99,10 +109,11 @@ def make_pipeline_callback(
     rules: Union[RulesProvider, dict[str, RuleConfig]],
     row_cap: int = DEFAULT_ROW_CAP,
     anomaly_scorer: Callable[[Sequence[object], object], float] | None = None,
+    case_summarizer: CaseSummarizer | None = None,
 ) -> Callable[[Transaction], None]:
     """Builds the callback passed to ReplayHarness.start(): loader -> baseline
     -> score_transaction() -> persist-if-flagged -> commit -> optional
-    anomaly annotation -> publish, all
+    anomaly and summary annotations -> publish, all
     against a single caller-owned connection opened once by the driver.
 
     `rules` is a RulesProvider, or a plain dict (wrapped in a static provider
@@ -156,12 +167,36 @@ def make_pipeline_callback(
                         "anomaly annotation failed for case %s transaction %s: %s",
                         case_id, transaction.id, exc,
                     )
-            # Only after a successful commit, only for a newly inserted row.
-            # publish_case_event never raises.
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(_SELECT_CASE, (case_id,))
                 row = cur.fetchone()
-            conn.commit()  # end the read-only transaction opened by the SELECT
+            conn.commit()  # Never hold an open DB transaction during an API call.
+
+            if row is not None and case_summarizer is not None:
+                try:
+                    summary = case_summarizer.summarize(row, transaction)
+                    model = case_summarizer.model
+                    if not isinstance(summary, str) or not 1 <= len(summary.strip()) <= 1000:
+                        raise ValueError("case summarizer returned invalid text")
+                    if not isinstance(model, str) or not model.strip():
+                        raise ValueError("case summarizer returned an invalid model id")
+                    with conn.cursor() as cur:
+                        cur.execute(_UPDATE_SUMMARY, (summary.strip(), model, case_id))
+                        if cur.rowcount != 1:
+                            raise ValueError("case summary was not stored")
+                    conn.commit()
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute(_SELECT_CASE, (case_id,))
+                        row = cur.fetchone()
+                    conn.commit()
+                except Exception as exc:
+                    conn.rollback()
+                    log.warning(
+                        "case summary failed for case %s transaction %s: %s",
+                        case_id, transaction.id, exc,
+                    )
+            # Only after successful case commit, only for a newly inserted row.
+            # publish_case_event never raises.
             if row is not None:
                 publish_case_event("case.created", case_summary(row))
 
