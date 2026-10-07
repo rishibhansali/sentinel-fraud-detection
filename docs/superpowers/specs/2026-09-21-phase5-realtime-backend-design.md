@@ -23,7 +23,9 @@ the loop between analyst decisions and detection.
    by the API as `null`.
 
 **Out of scope / deferred**
-- UI (Phase 9), ML scoring (Phases 6-7), Claude summaries (Phase 6).
+- UI (Phase 9), offline ML evaluation (Phase 6), live model annotations
+  (Phase 7), and optional plain-English summaries (Phase 8). See the
+  current [roadmap](../../ROADMAP.md); earlier phase labels were provisional.
 - Real authentication. `analyst` is a free-text field. **Phase 11 talking
   point:** identity is unauthenticated and trust-based, so claim ownership
   and decision attribution can be spoofed. Real identity is deferred.

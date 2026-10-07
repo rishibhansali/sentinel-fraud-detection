@@ -58,8 +58,9 @@ it moves this specific number.
 
 - `user_transaction_features` (plain view): `user_id`, `transaction_count`,
   `avg_amount`, `total_amount`, `fraud_count`, `last_transaction_at` — the
-  single reusable source of truth for this aggregation, referenceable by
-  Phase 6's feature engineering later rather than re-derived inline.
+  single reusable source of truth for this aggregation. Its full-lifetime
+  values and label-derived `fraud_count` are unsuitable as Phase 6 model
+  features; see the current [Phase 6 design](2026-10-07-phase6-offline-anomaly-evaluation-design.md).
 - `user_transaction_rollup` (materialized view): `SELECT * FROM
   user_transaction_features`, with a unique index on `user_id` so
   `REFRESH MATERIALIZED VIEW CONCURRENTLY` is supported (non-blocking).
@@ -91,7 +92,7 @@ Written so it's usable as interview prep without notes.
 ## Explicitly out of scope
 
 Any scoring/detection logic (Phase 3), streaming ingest (Phase 4),
-WebSocket/API work (Phase 5), Claude integration (Phase 6), real
-frontend (Phase 7), deployment/CI (Phase 8), and any actual
+WebSocket/API work (Phase 5), later model integration, optional summaries,
+frontend, deployment/CI, and any actual
 cron/pg_cron scheduler for the materialized view refresh (deferred,
 confirmed).

@@ -4,7 +4,7 @@ Real-time fraud detection and reviewer platform — a deterministic rules-based 
 
 ## Status
 
-The backend through Phase 5 is implemented: transaction replay and rules-based detection create cases in Postgres; analysts can claim, release, and decide cases through the REST API; Redis fans out case events to WebSocket clients; and rule changes hot-reload into the running pipeline. There is no reviewer UI yet. The [Phase 5 spec](docs/superpowers/specs/2026-09-21-phase5-realtime-backend-design.md) and [progress log](docs/superpowers/plans/2026-09-21-phase5-realtime-backend.md) cover behavior and known limits.
+The backend through Phase 5 is implemented: transaction replay and rules-based detection create cases in Postgres; analysts can claim, release, and decide cases through the REST API; Redis fans out case events to WebSocket clients; and rule changes hot-reload into the running pipeline. There is no reviewer UI yet. The [Phase 5 spec](docs/superpowers/specs/2026-09-21-phase5-realtime-backend-design.md) and [progress log](docs/superpowers/plans/2026-09-21-phase5-realtime-backend.md) cover behavior and known limits. The [roadmap](docs/ROADMAP.md) and [Phase 6 design](docs/superpowers/specs/2026-10-07-phase6-offline-anomaly-evaluation-design.md) define the next offline evaluation phase; it is not implemented yet.
 
 **Detection uses no AI.** Every flag comes from an auditable rule. A later phase may add plain-English summaries after a case is flagged; those summaries will not determine whether a transaction is flagged.
 
