@@ -2,8 +2,9 @@
 
 Spec: `docs/superpowers/specs/2026-09-21-phase5-realtime-backend-design.md`
 Branch: `phase5-realtime-backend` (off `phase4-realtime-pipeline`; PR #4 for
-Phase 4 is open and unmerged). **Nothing from Phase 5 is merged or PR'd; this
-awaits review.**
+Phase 4 is open and unmerged). At the September 21 handoff, Phase 5 had not
+been PR'd. Draft PR #5 was opened against the Phase 4 branch on October 7;
+neither phase has been merged into `main`.
 
 ## Built (against the spec's 9-task breakdown)
 Each task ran in its own worktree and landed as its own `git merge --no-ff`
@@ -201,9 +202,9 @@ New in Phase 5:
 - Direct publish after commit (Option A) behind `publish_case_event()`,
   REST-repair as the delivery guarantee.
 
-## Repo state
-- Branch `phase5-realtime-backend`, 23 commits ahead of
-  `phase4-realtime-pipeline`. No orphan worktrees or branches remain.
+## Repo state at the September 21 handoff
+- Branch `phase5-realtime-backend` was 23 commits ahead of
+  `phase4-realtime-pipeline`. No orphan worktrees or branches remained.
 - 249 backend tests passing; smoke 17/17.
 - Docker: `sentinel-db` and `sentinel-redis` both must be up.
 - Untracked (deliberately not committed):
@@ -223,6 +224,9 @@ New in Phase 5:
 - The veto-citation gap is resolved as described above; pure, database, and
   end-to-end exit tests now require the explanation while keeping priority
   unchanged. The spec's citation rule and exit criterion were updated.
+- Draft PR #5 (`phase5-realtime-backend` into `phase4-realtime-pipeline`) is
+  open for review. GitHub reports a clean merge state; the PR has no CI checks
+  configured, so the verification above was run locally.
 
 ## Setup steps for a user (complete list, including pre-existing)
 1. Start Docker Desktop; `docker compose -f infra/docker-compose.yml up -d db redis`.
