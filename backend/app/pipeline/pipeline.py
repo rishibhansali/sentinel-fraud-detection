@@ -1,21 +1,36 @@
-"""Wires ReplayHarness output through the frozen detection engine and
-persists flagged cases. Deliberately ends here: no WebSocket/UI delivery, no
-ML score, no Claude summary -- this phase ends at flagged rows existing in
-Postgres with their score and rule breakdown. Phase 5 owns the case queue;
-Phase 7/8 own ML and Claude.
+"""Wires ReplayHarness output through the frozen detection engine, persists
+flagged cases, and announces each newly inserted case on Redis (`case.created`,
+after commit, best-effort: a Redis outage never affects detection). Each case
+is stamped with the rules_config_version of the single RulesProvider snapshot
+used to score it. No ML score or Claude summary here; Phase 7/8 own those.
 """
 import json
-from typing import Callable
+import logging
+from typing import Callable, Optional, Union
+
+import psycopg2.extras
 
 from app.detection.models import RuleConfig, ScoreResult, Transaction
 from app.detection.scoring import score_transaction
 from app.pipeline.loader import DEFAULT_ROW_CAP, get_recent_transactions, get_user_baseline
+from app.pipeline.priority import compute_priority, lookup_priority_inputs
+from app.pipeline.rules_provider import RulesProvider
+from app.realtime.events import case_summary
+from app.realtime.publisher import publish_case_event
+
+log = logging.getLogger(__name__)
 
 _INSERT_FLAGGED_CASE = """
-    INSERT INTO flagged_cases (transaction_id, transaction_ts, user_id, total_score, rule_results)
-    VALUES (%(transaction_id)s, %(transaction_ts)s, %(user_id)s, %(total_score)s, %(rule_results)s)
-    ON CONFLICT (transaction_id) DO NOTHING;
+    INSERT INTO flagged_cases (transaction_id, transaction_ts, user_id, total_score, priority_score,
+                               rule_results, rules_config_version, priority_adjustment)
+    VALUES (%(transaction_id)s, %(transaction_ts)s, %(user_id)s, %(total_score)s, %(priority_score)s,
+            %(rule_results)s, %(rules_config_version)s, %(priority_adjustment)s)
+    ON CONFLICT (transaction_id) DO NOTHING
+    RETURNING id;
 """
+
+_SELECT_STORED = "SELECT total_score, rules_config_version FROM flagged_cases WHERE transaction_id = %s;"
+_SELECT_CASE = "SELECT * FROM flagged_cases WHERE id = %s;"
 
 
 def is_flagged(result: ScoreResult) -> bool:
@@ -28,7 +43,20 @@ def is_flagged(result: ScoreResult) -> bool:
     return any(r.fired for r in result.rule_results)
 
 
-def persist_flagged_case(conn, transaction: Transaction, result: ScoreResult) -> None:
+def persist_flagged_case(
+    conn,
+    transaction: Transaction,
+    result: ScoreResult,
+    rules_config_version: Optional[int] = None,
+    priority_score: Optional[float] = None,
+    priority_adjustment: Optional[dict] = None,
+) -> Optional[int]:
+    """Insert-if-absent. Returns the new case id, or None if a case for this
+    transaction already existed (first write wins; the stored row is never
+    altered). A skipped duplicate is logged with both the stored and the newly
+    computed score/version. Does not commit. priority_score defaults to
+    total_score and priority_adjustment to NULL (no demotion).
+    """
     rule_results_json = json.dumps([
         {"rule_name": r.rule_name, "fired": r.fired, "sub_score": r.sub_score, "details": r.details}
         for r in result.rule_results
@@ -40,39 +68,74 @@ def persist_flagged_case(conn, transaction: Transaction, result: ScoreResult) ->
             "user_id": transaction.user_id,
             "total_score": result.total_score,
             "rule_results": rule_results_json,
+            "rules_config_version": rules_config_version,
+            "priority_score": result.total_score if priority_score is None else priority_score,
+            "priority_adjustment": None if priority_adjustment is None else json.dumps(priority_adjustment),
         })
+        row = cur.fetchone()
+        if row is not None:
+            return row[0]
+        cur.execute(_SELECT_STORED, (transaction.id,))
+        stored = cur.fetchone()
+    log.warning(
+        "duplicate flagged case skipped for transaction %s: stored total_score=%s rules_config_version=%s, "
+        "recomputed total_score=%s rules_config_version=%s",
+        transaction.id,
+        stored[0] if stored else None, stored[1] if stored else None,
+        result.total_score, rules_config_version,
+    )
+    return None
 
 
 def make_pipeline_callback(
     conn,
-    rules_config: dict[str, RuleConfig],
+    rules: Union[RulesProvider, dict[str, RuleConfig]],
     row_cap: int = DEFAULT_ROW_CAP,
 ) -> Callable[[Transaction], None]:
     """Builds the callback passed to ReplayHarness.start(): loader -> baseline
-    -> score_transaction() -> persist-if-flagged, all against a single
-    caller-owned connection opened once by the driver, not per transaction.
+    -> score_transaction() -> persist-if-flagged -> commit -> publish, all
+    against a single caller-owned connection opened once by the driver.
+
+    `rules` is a RulesProvider, or a plain dict (wrapped in a static provider
+    with no version). provider.current() is read once per transaction so
+    scoring and version stamping always use the same snapshot.
 
     This is a second, separate long-lived connection from ReplayHarness's own
-    internal read connection (used only for reading replay-source batches) --
-    not shared with it, since ReplayHarness's callback interface is already
-    closed/reviewed and isn't reopened here. Two long-lived connections
-    total, neither opened per-transaction.
+    internal read connection. Two long-lived connections total, neither
+    opened per-transaction.
     """
+    provider = rules if isinstance(rules, RulesProvider) else RulesProvider.static(rules)
+
     def on_transaction(transaction: Transaction) -> None:
+        snapshot = provider.current()
         recent = get_recent_transactions(conn, transaction.user_id, transaction.ts, transaction.id, row_cap)
         baseline = get_user_baseline(conn, transaction.user_id)
-        result = score_transaction(transaction, recent, baseline, rules_config)
+        result = score_transaction(transaction, recent, baseline, snapshot.rules_config)
 
+        case_id = None
         if is_flagged(result):
-            persist_flagged_case(conn, transaction, result)
+            inputs = lookup_priority_inputs(
+                conn, transaction.user_id, [r.rule_name for r in result.rule_results if r.fired]
+            )
+            priority_score, adjustment = compute_priority(result, snapshot.rules_config, inputs)
+            case_id = persist_flagged_case(
+                conn, transaction, result, snapshot.version,
+                priority_score=priority_score, priority_adjustment=adjustment,
+            )
 
         # Commit per transaction (not batched): keeps every flagged row
-        # durable immediately and avoids one long-running session transaction
-        # across the whole replay. Candidate for batching (e.g. every N
-        # transactions, or only after an actual insert) if Task 4's
-        # throughput numbers show COMMIT round-trips -- not scoring logic --
-        # are the bottleneck. Not done now: no throughput number exists yet
-        # to justify it.
+        # durable immediately. Candidate for batching if throughput numbers
+        # show COMMIT round-trips are the bottleneck.
         conn.commit()
+
+        if case_id is not None:
+            # Only after a successful commit, only for a newly inserted row.
+            # publish_case_event never raises.
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(_SELECT_CASE, (case_id,))
+                row = cur.fetchone()
+            conn.commit()  # end the read-only transaction opened by the SELECT
+            if row is not None:
+                publish_case_event("case.created", case_summary(row))
 
     return on_transaction
