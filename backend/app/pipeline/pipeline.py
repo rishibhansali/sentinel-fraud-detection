@@ -34,7 +34,8 @@ _INSERT_FLAGGED_CASE = """
 _SELECT_STORED = "SELECT total_score, rules_config_version FROM flagged_cases WHERE transaction_id = %s;"
 _SELECT_CASE = "SELECT * FROM flagged_cases WHERE id = %s;"
 _SELECT_ML_INPUTS = (
-    "SELECT " + ", ".join(f"v{i}" for i in range(1, 29)) + ", amount FROM transactions WHERE id = %s;"
+    "SELECT " + ", ".join(f"v{i}" for i in range(1, 29))
+    + ", amount FROM transactions WHERE id = %s AND ts = %s;"
 )
 _UPDATE_ML_SCORE = "UPDATE flagged_cases SET ml_anomaly_score = %s WHERE id = %s;"
 
@@ -140,7 +141,7 @@ def make_pipeline_callback(
             if anomaly_scorer is not None:
                 try:
                     with conn.cursor() as cur:
-                        cur.execute(_SELECT_ML_INPUTS, (transaction.id,))
+                        cur.execute(_SELECT_ML_INPUTS, (transaction.id, transaction.ts))
                         row = cur.fetchone()
                         if row is None:
                             raise ValueError(f"transaction {transaction.id} missing for anomaly annotation")
