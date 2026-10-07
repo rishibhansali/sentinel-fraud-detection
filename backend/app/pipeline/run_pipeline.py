@@ -4,7 +4,9 @@ and persisting flagged cases. Long-lived process for local dev -- stop with
 Ctrl+C (SIGINT), not a one-shot script.
 """
 import argparse
+import logging
 import signal
+from pathlib import Path
 
 import psycopg2
 
@@ -14,6 +16,7 @@ from app.pipeline.replay import ReplayHarness
 from app.pipeline.rules_provider import RulesProvider
 
 DEFAULT_DSN = "postgresql://sentinel:sentinel_dev_only@localhost:5432/sentinel"
+log = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -25,12 +28,28 @@ def main() -> None:
     parser.add_argument("--row-cap", type=int, default=DEFAULT_ROW_CAP)
     parser.add_argument("--rules-poll-seconds", type=float, default=30.0,
                         help="safety-net poll interval for rules hot reload")
+    parser.add_argument("--ml-artifact-dir", type=Path, default=None,
+                        help="explicit trusted Phase 6 run directory; annotate newly flagged cases only")
     args = parser.parse_args()
+
+    anomaly_scorer = None
+    if args.ml_artifact_dir is not None:
+        from app.ml.scorer import load_artifact
+
+        try:
+            artifact = load_artifact(args.ml_artifact_dir)
+        except ValueError as exc:
+            parser.error(str(exc))
+        anomaly_scorer = artifact.score_values
+        logging.basicConfig(level=logging.INFO)
+        log.info("loaded anomaly artifact sha256=%s", artifact.model_sha256)
 
     rules = RulesProvider(args.dsn)
     rules.start_hot_reload(poll_interval=args.rules_poll_seconds)
     processing_conn = psycopg2.connect(args.dsn)
-    on_transaction = make_pipeline_callback(processing_conn, rules, row_cap=args.row_cap)
+    on_transaction = make_pipeline_callback(
+        processing_conn, rules, row_cap=args.row_cap, anomaly_scorer=anomaly_scorer
+    )
 
     harness = ReplayHarness(
         conn_factory=lambda: psycopg2.connect(args.dsn),

@@ -1,9 +1,9 @@
 # Sentinel roadmap
 
-Phases 1–5 are merged. The [Phase 6 design](superpowers/specs/2026-10-07-phase6-offline-anomaly-evaluation-design.md)
-defines the next implementation boundary. Earlier specs and progress logs
-record the phase numbering in use when they were written; this page is the
-current allocation for the remaining work.
+Phases 1–7 are implemented. The [Phase 7 design](superpowers/specs/2026-10-07-phase7-case-annotation-design.md)
+defines the optional model boundary. Earlier specs and progress logs record
+the phase numbering in use when they were written; this page is the current
+allocation for the remaining work.
 
 | Phase | Outcome | Boundary |
 |---|---|---|
