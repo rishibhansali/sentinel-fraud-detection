@@ -42,7 +42,7 @@
 
 **Files:** `backend/app/summaries/claude.py`, `backend/tests/summaries/test_claude.py`
 
-**Interfaces:** `ClaudeSummarizer(api_key: str, client: httpx.Client | None = None)` with `model` and `summarize(row: dict, transaction: Transaction) -> str`.
+**Interfaces:** `ClaudeSummarizer(api_key: str, transport: httpx.AsyncBaseTransport | None = None, deadline_seconds: float = 8.0)` with `model` and `summarize(row: dict, transaction: Transaction) -> str`.
 
 - [ ] Write failing tests for minimized request payload, required API headers, valid text, bad status, empty/truncated/malformed/oversize output, and injected rule details.
 - [ ] Run focused tests and confirm failure.
