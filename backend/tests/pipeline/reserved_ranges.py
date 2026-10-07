@@ -16,7 +16,7 @@ test files are closed and are not edited to import from this module.
 #   user_id: -1001
 
 # Task 2 (tests/pipeline/test_replay.py):
-#   transaction ids: 4,000,000+
+#   transaction ids: 4,000,000..4,000,999
 #   user_id: 1 (hardcoded, not reserved -- coincidentally safe only because
 #   those tests are id-range-isolated and never query by user_id)
 
@@ -25,7 +25,7 @@ test files are closed and are not edited to import from this module.
 #   user_id: -2001, -2099
 
 # Task 3 (tests/pipeline/test_pipeline.py):
-#   transaction ids: 7,000,000+
+#   transaction ids: 7,000,000..7,000,999
 #   user_id: -3001, -3002, -3003
 
 # --- Task 4 onward: actually imported, not just documented. ---
@@ -46,7 +46,8 @@ LOAD_GENERATOR_USER_ID_POOL_START = -10050
 LOAD_GENERATOR_USER_POOL_SIZE = 50
 
 # Task 6 (tests/pipeline/test_run_pipeline.py): uses the 8,000,000-9,999,999
-# gap left open above, for the one subprocess-based CLI test.
+# gap left open above, for the one subprocess-based CLI test. It owns only
+# 8,000,000..8,000,999.
 RUN_PIPELINE_CLI_TEST_ID_BASE = 8_000_000
 RUN_PIPELINE_CLI_TEST_USER_ID = -4001
 

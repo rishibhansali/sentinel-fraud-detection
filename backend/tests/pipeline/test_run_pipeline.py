@@ -60,8 +60,8 @@ def seeded_conn():
         yield conn
     finally:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM flagged_cases WHERE transaction_id >= %s;", (RUN_PIPELINE_CLI_TEST_ID_BASE,))
-            cur.execute("DELETE FROM transactions WHERE id >= %s;", (RUN_PIPELINE_CLI_TEST_ID_BASE,))
+            cur.execute("DELETE FROM flagged_cases WHERE transaction_id BETWEEN %s AND %s;", (RUN_PIPELINE_CLI_TEST_ID_BASE, RUN_PIPELINE_CLI_TEST_ID_BASE + 999))
+            cur.execute("DELETE FROM transactions WHERE id BETWEEN %s AND %s;", (RUN_PIPELINE_CLI_TEST_ID_BASE, RUN_PIPELINE_CLI_TEST_ID_BASE + 999))
         conn.commit()
         conn.close()
 
@@ -95,8 +95,8 @@ def test_run_pipeline_cli_flags_correct_transaction(seeded_conn):
 
     with seeded_conn.cursor() as cur:
         cur.execute(
-            "SELECT transaction_id, total_score, rule_results FROM flagged_cases WHERE transaction_id >= %s;",
-            (RUN_PIPELINE_CLI_TEST_ID_BASE,),
+            "SELECT transaction_id, total_score, rule_results FROM flagged_cases WHERE transaction_id BETWEEN %s AND %s;",
+            (RUN_PIPELINE_CLI_TEST_ID_BASE, RUN_PIPELINE_CLI_TEST_ID_BASE + 999),
         )
         rows = cur.fetchall()
 
