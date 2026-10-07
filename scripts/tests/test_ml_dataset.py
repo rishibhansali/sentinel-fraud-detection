@@ -31,6 +31,8 @@ def test_original_rows_split_once_and_class_is_not_a_feature(tmp_path):
     assert np.array_equal(data.splits, assign_splits(data.labels, np.random.default_rng(42)))
     assert set(data.splits) == {"train", "val", "test"}
     assert sum((data.splits == name).sum() for name in ("train", "val", "test")) == 400
+    split_indices = [set(data.source_row_indices[data.splits == name]) for name in ("train", "val", "test")]
+    assert all(not split_indices[i] & split_indices[j] for i, j in ((0, 1), (0, 2), (1, 2)))
     assert data.source_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
     frame["Class"] = 1 - frame["Class"].astype(int)
     frame.to_csv(path, index=False)

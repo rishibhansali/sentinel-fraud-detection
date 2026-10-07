@@ -44,6 +44,9 @@ def test_fit_ignores_test_features_and_threshold_ignores_labels():
     source.labels[60:120] = 1 - source.labels[60:120]
     third = evaluate(source)
     assert first.threshold == third.threshold
+    source.labels[:60] = 1 - source.labels[:60]
+    fourth = evaluate(source)
+    assert np.array_equal(first.model.decision_function(probe), fourth.model.decision_function(probe))
 
 
 def test_metrics_require_both_classes():
