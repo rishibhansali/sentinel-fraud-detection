@@ -210,6 +210,18 @@ New in Phase 5:
   `docs/superpowers/plans/2026-09-21-phase5-full-code-report.md`, the
   mechanically generated full-code review file.
 
+## Review follow-up — 2026-10-07
+- Updated the README, which still described Phase 1 as unfinished, with the
+  Phase 5 backend status and current setup and run commands.
+- Rule PATCH validation now returns 422 for integers too large to fit the
+  floating-point rule fields. Previously `math.isfinite` raised
+  `OverflowError`, producing a server error. Two real-API regression cases
+  cover the weight and parameter paths.
+- Fresh main-worktree verification after that fix: **251 passed** in the full
+  backend suite; the real API/pipeline smoke passed **17/17** steps and
+  restored its database state. No frontend build exists yet.
+- The veto-citation question in the spec issues above remains open.
+
 ## Setup steps for a user (complete list, including pre-existing)
 1. Start Docker Desktop; `docker compose -f infra/docker-compose.yml up -d db redis`.
    Check: `docker exec sentinel-db pg_isready -U sentinel -d sentinel` and
