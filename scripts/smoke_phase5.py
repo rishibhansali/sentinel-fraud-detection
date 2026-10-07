@@ -270,6 +270,17 @@ async def run(orig: dict, procs: dict) -> None:
                 step("7c feedback false_positive by claimant -> 200, WS case.updated, status false_positive",
                      r.status_code == 200 and r.json()["status"] == "false_positive" and bool(ev),
                      f"status={r.status_code} case status={r.json().get('status')} ws_event={bool(ev)}")
+                repair_cursor, repaired = 0, None
+                while True:
+                    repair = await http.get("/cases", params={"since_id": repair_cursor, "limit": 500})
+                    repair.raise_for_status()
+                    repaired = next((item for item in repair.json()["items"] if item["id"] == cid), None)
+                    if repaired is not None or repair.json()["next_since_id"] is None:
+                        break
+                    repair_cursor = repair.json()["next_since_id"]
+                step("7d full REST reconciliation recovers an updated existing case",
+                     repaired is not None and repaired["status"] == "false_positive",
+                     f"case id={cid} repaired status={repaired and repaired['status']}")
 
                 # 8. Group C
                 c_case = await wait_for(lambda: case_for_txn(14), 40)

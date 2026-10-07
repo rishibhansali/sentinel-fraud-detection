@@ -97,8 +97,9 @@ Explicitly listed, none silent.
    "different config" test must change one weight only.
 
 **Additions beyond the spec (inferences, each stated in code)**
-- `{"type": "resync"}` broadcast to WebSocket clients when the API's Redis
-  subscriber reconnects, so they repair via `since_id`.
+- `{"type": "resync"}` broadcast to WebSocket clients whenever the API's Redis
+  subscriber establishes a subscription, including the first success after a
+  startup outage. Clients page from `since_id=0` to refresh existing cases.
 - Default queue filter (no `status`) = `open` + `in_review` ("pending").
 - `next_since_id` = last id of a full page, else null (caught up).
 - No-op PATCH writes nothing (no history row, no version bump, no publish) and

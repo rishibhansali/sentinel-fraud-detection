@@ -233,11 +233,13 @@ events between them.
 
 ### 5.3 `since_id` REST-repair cursor
 - `GET /cases?since_id=N` returns cases with `id > N`, `id ASC`, capped
-  (default 200, max 500), any status. It is the repair path for missed
-  pushes.
-- Client protocol: connect the WebSocket first, then call REST with the last
-  seen id, then dedupe by case id (events carry full summaries, so
-  reapplying is idempotent).
+  (default 200, max 500), any status. A nonzero cursor finds missed creations;
+  it cannot find updates to existing case ids.
+- Client protocol: connect the WebSocket first, then page REST from
+  `since_id=0` for a full reconciliation on connect, reconnect, `resync`,
+  and periodically. Replace the cached summary by case id, then apply any
+  pushes buffered during paging. Incremental scans from the last seen id
+  can be used between full reconciliations to find new cases.
 - **Assumption, stated:** with a single writer, commit order equals `id`
   order, so `id > N` never skips a case. If multiple concurrent writers are
   ever introduced (LoadGenerator alongside the pipeline against the same
@@ -382,8 +384,9 @@ history currently counts). Noted as a limitation.
 ## 9. Error handling
 
 - Redis down at publish: log and count, detection unaffected (5.1).
-- Redis down for the API subscriber: reconnect with backoff, and clients
-  repair via `since_id` on reconnect.
+- Redis down for the API subscriber: reconnect with backoff and broadcast
+  `resync` on every successful subscription, including the first after a
+  startup outage. Clients then page from `since_id=0`.
 - Pipeline Redis subscriber for rules: reconnect with backoff, with the
   30 s version comparison as the safety net.
 - Postgres connection drops in the pipeline stay a Phase 4 deferred gap.

@@ -105,6 +105,25 @@ def get_case(conn, case_id):
     return dict(row) if row else None
 
 
+def get_case_detail(conn, case_id):
+    """Read the case and feedback from one PostgreSQL statement snapshot."""
+    with _tx(conn) as cur:
+        cur.execute(
+            """SELECT fc.*,
+                      (SELECT COALESCE(json_agg(f ORDER BY f.decided_at, f.id), '[]'::json)
+                         FROM (SELECT id, decision, analyst, note, decided_at
+                                 FROM case_feedback WHERE case_id = fc.id) f) AS feedback
+                 FROM flagged_cases fc WHERE fc.id = %s""",
+            (case_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    detail = dict(row)
+    detail["current_decision"] = detail["feedback"][-1] if detail["feedback"] else None
+    return detail
+
+
 def _raise_for_failed_update(cur, case_id, reason):
     # Follow-up read is for the error only; the UPDATE already decided.
     row = _select_case(cur, case_id)

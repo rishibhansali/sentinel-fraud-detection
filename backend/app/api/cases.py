@@ -11,7 +11,7 @@ from app.cases.repository import (
     CaseConflict,
     CaseNotFound,
     claim_case,
-    get_case,
+    get_case_detail,
     release_case,
     submit_feedback,
 )
@@ -72,7 +72,10 @@ def query_queue(conn, statuses, limit, cursor):
 
 
 def query_since_id(conn, since_id, limit):
-    """Repair cursor: id > since_id, id ASC, any status.
+    """Creation cursor: id > since_id, id ASC, any status.
+
+    To repair missed updates to existing ids, scan from since_id=0 and
+    replace cached summaries by id. A nonzero cursor alone cannot find them.
 
     LIMITATION (spec 5.3): this cursor assumes a SINGLE writer, so that commit
     order equals id (BIGSERIAL sequence) order. With multiple concurrent
@@ -97,11 +100,12 @@ def list_cases(
     since_id: int | None = None,
     conn=Depends(get_conn),
 ):
-    """Queue (`status`, `limit`, `cursor`) or repair cursor (`since_id`).
+    """Queue (`status`, `limit`, `cursor`) or id cursor (`since_id`).
 
     `since_id=N` returns cases with id > N, id ASC, any status (default limit
-    200, max 500) and `next_since_id`. Combining it with `status` or `cursor`
-    is a 422.
+    200, max 500) and `next_since_id`. Start at 0 for full reconciliation
+    after a WebSocket gap; a nonzero cursor only retrieves newly created ids.
+    Combining it with `status` or `cursor` is a 422.
 
     LIMITATION (spec 5.3): the since_id cursor assumes a SINGLE writer so that
     commit order equals id (BIGSERIAL sequence) order. With multiple
@@ -140,18 +144,9 @@ def list_cases(
 
 @router.get("/cases/{case_id}")
 def case_detail(case_id: int, conn=Depends(get_conn)):
-    row = get_case(conn, case_id)  # repository owns its (read-only) transaction
+    row = get_case_detail(conn, case_id)
     if row is None:
         raise HTTPException(404, f"case {case_id} not found")
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(
-            "SELECT id, decision, analyst, note, decided_at FROM case_feedback "
-            "WHERE case_id = %s ORDER BY decided_at ASC, id ASC",
-            (case_id,),
-        )
-        row["feedback"] = [dict(h) for h in cur.fetchall()]
-    # resolution rule (spec 4.2): greatest (decided_at, id) == last in ASC order
-    row["current_decision"] = row["feedback"][-1] if row["feedback"] else None
     return row
 
 
