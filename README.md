@@ -62,6 +62,8 @@ The test suite and Phase 5 smoke script use reserved transaction IDs and clean u
 backend/.venv/bin/python scripts/smoke_phase5.py
 ```
 
+Pull requests and pushes to `main` run the same checks in [GitHub Actions](.github/workflows/ci.yml). The backend job starts fresh PostgreSQL 16 and Redis 7 services, applies migrations 001–008, runs all backend tests, then runs the real API/pipeline smoke script. An independent frontend job runs `npm ci`, `npm test`, and `npm run build` with Node 22. CI uses the development-only database credentials and requires no repository secrets.
+
 To run the service and replay pipeline, start these in separate terminals from `backend/`:
 
 ```sh
