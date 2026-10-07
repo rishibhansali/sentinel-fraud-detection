@@ -1,4 +1,5 @@
 """Contract tests for the opt-in Anthropic Messages client."""
+import asyncio
 import json
 from datetime import datetime, timezone
 
@@ -32,8 +33,7 @@ def _response(text="Five transactions occurred in the recent velocity window.", 
 
 
 def _summarizer(handler):
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    return ClaudeSummarizer("test-key", client=client)
+    return ClaudeSummarizer("test-key", transport=httpx.MockTransport(handler))
 
 
 def test_sends_minimized_evidence_and_required_headers():
@@ -85,3 +85,21 @@ def test_http_error_propagates_to_fail_open_caller():
 def test_missing_key_rejected_without_request():
     with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
         ClaudeSummarizer(" ")
+
+
+def test_slowly_progressing_response_cannot_exceed_whole_request_deadline():
+    class DripStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            body = json.dumps(_response()).encode()
+            for start in range(0, len(body), 20):
+                await asyncio.sleep(0.03)
+                yield body[start:start + 20]
+
+    async def handle(request):
+        return httpx.Response(200, stream=DripStream())
+
+    summarizer = ClaudeSummarizer(
+        "test-key", transport=httpx.MockTransport(handle), deadline_seconds=0.08
+    )
+    with pytest.raises(TimeoutError):
+        summarizer.summarize(CASE, TRANSACTION)

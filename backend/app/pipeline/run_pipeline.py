@@ -82,8 +82,6 @@ def main() -> None:
     finally:
         rules.stop_hot_reload()
         processing_conn.close()
-        if case_summarizer is not None:
-            case_summarizer.close()
 
 
 if __name__ == "__main__":
