@@ -161,6 +161,26 @@ def test_unflagged_transaction_never_calls_model(conn, subscriber):
     assert _wait_for(messages, id_) == []
 
 
+def test_annotation_uses_exact_timestamp_when_transaction_ids_repeat(conn):
+    current_id = BASE + 2
+    # The partitioned transactions PK is (id, ts), so this older row may
+    # legally share the id. It must never supply the flagged case's features.
+    _insert(
+        conn, current_id, USER - 10, datetime(2025, 1, 1, tzinfo=timezone.utc),
+        NYC, 1000, [-9] * 28,
+    )
+    current = _seed_pair(conn, current_id=current_id)
+    scored = []
+
+    def score(values, amount):
+        scored.append((tuple(values), amount))
+        return 0.42
+
+    make_pipeline_callback(conn, RulesProvider(DB_DSN), anomaly_scorer=score)(current)
+    assert _case(current.id)["ml_anomaly_score"] == pytest.approx(0.42)
+    assert scored == [(tuple(range(1, 29)), 99)]
+
+
 def test_model_error_keeps_case_and_publishes_null_score(conn, subscriber, caplog):
     messages, visible_scores = subscriber
     current = _seed_pair(conn)
