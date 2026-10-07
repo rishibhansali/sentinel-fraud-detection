@@ -30,6 +30,18 @@ test('fractional integer parameter and missing analyst are rejected', () => {
   assert.throws(() => buildRulePatch(rule, draft, '  '), /analyst name/)
 })
 
+test('decimal parameters accept fractional edits from integer-valued defaults', () => {
+  const amount = {
+    rule_name: 'amount_baseline', weight: 1, enabled: true,
+    params: { deviation_multiplier: 3 },
+  }
+  const draft = makeRuleDraft(amount)
+  draft.params.deviation_multiplier = '3.5'
+  assert.deepEqual(buildRulePatch(amount, draft, 'Asha'), {
+    changed_by: 'Asha', params: { deviation_multiplier: 3.5 },
+  })
+})
+
 test('nonfinite and negative weight are rejected', () => {
   const draft = makeRuleDraft(rule)
   draft.weight = '-1'

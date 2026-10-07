@@ -76,7 +76,7 @@ export default function App() {
       await Promise.all([refresh(), loadDetail(selectedId)])
     } catch (cause) {
       setActionError(cause.message || 'The action failed')
-      if (cause instanceof ApiError && cause.status === 409) {
+      if (cause instanceof ApiError && (cause.status === 409 || cause.status === 422)) {
         await Promise.allSettled([refresh(), loadDetail(selectedId)])
       }
     } finally {

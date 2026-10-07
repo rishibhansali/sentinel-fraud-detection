@@ -30,6 +30,7 @@ export function CaseDetail({ detail, loading, error, analyst, busy, actionError,
           <p className="eyebrow">Case #{detail.id} <span className="eyebrow-separator">/</span> TXN-{detail.transaction_id}</p>
           <h2>Transaction review</h2>
           <p className="detail-subtitle">Flagged {formatDate(detail.flagged_at)} · User {detail.user_id}</p>
+          {detail.claimed_by && <p className="detail-subtitle">Claim owner: {detail.claimed_by}</p>}
         </div>
         <span className={`status-pill prominent ${detail.status}`}>{statusLabel(detail.status)}</span>
       </div>
