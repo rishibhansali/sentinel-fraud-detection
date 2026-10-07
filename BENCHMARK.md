@@ -75,8 +75,10 @@ works" below).
   (a precomputed per-user summary, refreshed on a schedule rather than
   computed live on every read) and is included in this phase because
   its aggregation logic (`user_transaction_features`) is the reusable
-  building block Phase 6's feature engineering will need, kept isolated
-  in its own view rather than buried inline in application code.
+  building block originally intended for later feature engineering, kept
+  isolated in its own view rather than buried inline in application code.
+  The current [Phase 6 design](docs/superpowers/specs/2026-10-07-phase6-offline-anomaly-evaluation-design.md)
+  excludes this full-lifetime, label-derived rollup from model inputs.
 
 ## Task 5 — streaming write load regression check
 
