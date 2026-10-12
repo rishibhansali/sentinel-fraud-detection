@@ -1,45 +1,61 @@
 # Sentinel
 
-Real-time fraud detection and reviewer platform — a deterministic rules-based scoring engine, a PostgreSQL query-optimization benchmark, a WebSocket-driven case-review queue, and an optional anomaly annotation for rule-created cases. The detection path remains rules-only.
+Sentinel is a **local fraud-detection and case-review portfolio project**. It replays card transactions through three explainable rules, persists flagged cases in PostgreSQL, and gives an analyst a live React queue for investigation and feedback. It also measures a real database optimization and evaluates an optional offline anomaly model. The project is designed to demonstrate the engineering decisions behind a fraud workflow, not to process real payments.
 
-## Status
+**The flagging decision is deterministic.** A transaction becomes a case when any enabled rule fires. Rule weights change its score and queue position; they do not create or suppress a flag. An optional Isolation Forest score and optional Claude summary annotate an already-created case and never decide the outcome.
 
-Phases 1–9 are implemented: transaction replay and rules-based detection create cases in Postgres; analysts can claim, release, and decide cases through the REST API; Redis fans out case events to WebSocket clients; and rule changes hot-reload into the running pipeline. Phase 6 adds offline Isolation Forest evaluation on original source rows. Phase 7 can annotate newly rule-created cases with a compatible local model when explicitly enabled. Phase 8 can add an optional Claude explanation after a rule-created case is committed. Phase 9 adds a browser reviewer interface for the existing case, feedback, and rule APIs. The [roadmap](docs/ROADMAP.md) and [Phase 9 design](docs/superpowers/specs/2026-10-07-phase9-reviewer-ui-design.md) describe the boundaries.
+The planned local scope (Phases 1–9) is implemented. Deployment and authentication are outside that scope. For a complete technical walkthrough, design rationale, interview notes, and a file-by-file map, read the [Project Guide](docs/PROJECT_GUIDE.md). The [roadmap](docs/ROADMAP.md) records the scope and the [benchmark report](BENCHMARK.md) gives the measurement details.
 
-**Detection uses no AI.** Every flag comes from an auditable rule. Optional ML annotations and AI summaries add context only after a case is flagged; neither determines whether a transaction is flagged.
+## What you can demonstrate
 
-## Stack
+1. Replay transactions at a chosen speed, then watch rule-created cases appear in the browser through Redis Pub/Sub and WebSockets.
+2. Inspect the fired-rule evidence, claim or release a case, record a fraud/false-positive decision, and see the append-only feedback history.
+3. Change a rule's thresholds or weight in the UI. The running pipeline hot-reloads the versioned configuration; past cases retain their original rule evidence.
+4. Run the offline anomaly evaluation on original source rows, then optionally attach its score to new rule-created cases. Optionally enable a bounded Claude explanation with your own API key.
+5. Reproduce the database benchmark. The same per-user `SELECT * ... ORDER BY ts DESC LIMIT N` query went from a **68.68 ms** warm median before the composite index to **2.02 ms** after it on 3,132,877 local rows (about **34×** faster). Partitioning and the rollup do not explain that specific gain.
 
-| Layer | Choice | Why |
+```text
+ULB CSV -> deterministic augmentation -> PostgreSQL transactions
+                                          |
+                              replay + recent history
+                                          |
+                          velocity / amount / geo rules
+                                          |
+                            flagged_cases + rule evidence
+                                          |
+                     Redis event -> WebSocket -> React reviewer UI
+                                          |
+                           claim / feedback / rule edits
+
+Optional, after flagging: Isolation Forest score; Claude summary.
+```
+
+| Layer | Technology | Role |
 |---|---|---|
-| Backend | FastAPI (Python) | REST APIs, case workflow, and deterministic scoring |
-| Database | PostgreSQL 16 | Transaction history, case queue, rule history, and query benchmarks |
-| Real-time | Redis 7 + WebSockets | Push case changes across API instances; REST provides missed-event repair |
-| Frontend | React + Vite | Local reviewer UI for cases, feedback, and rule controls |
-| Infra | Docker Compose locally | Runs Postgres and Redis for development and tests |
+| Backend | Python 3.12, FastAPI, psycopg2 | Rules, replay, REST API, case actions, WebSocket endpoint |
+| Database | PostgreSQL 16 | Transactions, indexes/partitions, cases, feedback, rule history |
+| Live updates | Redis 7 Pub/Sub + WebSockets | Broadcast hints; REST reconciliation repairs missed events |
+| Frontend | React 19, Vite 8 | Local case queue, detail, analyst actions, rule controls |
+| Offline analysis | pandas, NumPy, scikit-learn, joblib | Original-row split, Isolation Forest, reproducible report |
+| Checks | pytest, Node test runner, GitHub Actions | Database-backed backend tests, smoke, offline tests, UI tests/build |
 
-## Design Decisions Made So Far
+## Run it locally
 
-Several engineering decisions shape the implementation:
-
-- **Leakage-safe train/val/test split.** The dataset (ULB Credit Card Fraud, ~284.8K real rows) gets a stratified 70/15/15 split assigned once per *original* row, before an 11x synthetic-identity replication step that brings the table to ~3.1M rows. Every replica inherits its source row's split assignment unchanged, so the same underlying transaction can never appear in both train and test wearing a different synthetic identity later.
-- **`SELECT *` scope is locked across the before/after benchmark.** The optimization benchmark query (`SELECT * FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT N`) intentionally keeps its column scope fixed between the "before" and "after" measurements, so adding an index is the only variable that changes — narrowing columns later would conflate "added an index" with "reduced payload size" and invalidate the comparison.
-- **Cold-cache methodology is a script, not a guess.** Rather than inferring cache state from elapsed idle time, `scripts/benchmark.py` explicitly restarts the Postgres container (`docker compose restart db`), runs one recorded cold query immediately after it's accepting connections, then runs the remaining warm queries back-to-back — making the methodology reproducible from the script itself, not from operator timing.
-- **Geo and identity fields are synthetic by necessity, and documented as such.** The source dataset has no `user_id` or location data, so both are generated with a fixed seed rather than derived from a real identity signal. The synthetic "impossible geo" pattern is intentionally biased toward `Class=1` rows; see [data notes](data/README.md).
-
-## Setup
-
-Use Python 3.12 and project-local virtual environments. Start Docker Desktop, then run from the repository root:
+Use Docker Desktop, Python 3.12, and Node.js 22.12+ (or 20.19+). All dependencies stay in project-local environments. Run commands from the repository root unless a command changes directory.
 
 ```sh
 docker compose -f infra/docker-compose.yml up -d db redis
 docker exec sentinel-db pg_isready -U sentinel -d sentinel
 docker exec sentinel-redis redis-cli ping
+
 python3.12 -m venv backend/.venv
-backend/.venv/bin/pip install -r backend/requirements.txt
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+python3.12 -m venv scripts/.venv
+scripts/.venv/bin/python -m pip install -r scripts/requirements.txt
+(cd frontend && npm ci)
 ```
 
-On a fresh database, apply `infra/migrations/001` through `008` once, in filename order:
+**Fresh database only:** apply the eight migrations in order. An existing configured database does not need this step again.
 
 ```sh
 for migration in infra/migrations/*.sql; do
@@ -47,82 +63,59 @@ for migration in infra/migrations/*.sql; do
 done
 ```
 
-For normal replay on a fresh database, load the [source dataset](data/README.md). The ingest script downloads it if absent and replaces the contents of `transactions`, so do not run it against a database whose transactions you need to retain:
+**Fresh dataset only:** `scripts/ingest.py` downloads the documented [ULB CSV](data/README.md) if needed, assigns reproducible synthetic identities and locations, and loads 11 replicas. It **truncates and replaces `transactions`**; skip this step if you want to keep existing rows. The raw CSV and generated ML artifacts are ignored by Git.
 
 ```sh
-python3.12 -m venv scripts/.venv
-scripts/.venv/bin/pip install -r scripts/requirements.txt
 scripts/.venv/bin/python scripts/ingest.py
+docker exec sentinel-db psql -U sentinel -d sentinel -c 'REFRESH MATERIALIZED VIEW CONCURRENTLY user_transaction_rollup;'
 ```
 
-The test suite and Phase 5 smoke script use reserved transaction IDs and clean up their own data.
+Refresh the rollup after ingestion because the amount rule reads that cached user baseline. Migration 004 creates the view, but on a fresh database it is still empty until transactions are loaded and refreshed.
+
+Start three terminals:
+
+```sh
+# Terminal 1: API (from repository root)
+cd backend && .venv/bin/python -m uvicorn app.main:app --port 8000
+```
+
+```sh
+# Terminal 2: replay an existing range; Ctrl+C to stop
+cd backend && .venv/bin/python -m app.pipeline.run_pipeline --start-id 0 --end-id 1000 --speed-multiplier 1000
+```
+
+```sh
+# Terminal 3: reviewer UI
+cd frontend && npm run dev
+```
+
+Open **[http://127.0.0.1:5173](http://127.0.0.1:5173)** for the reviewer UI, **[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)** for interactive API documentation, and **[http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)** for the health endpoint. Vite proxies `/cases`, `/rules`, `/stats`, and `/ws` to the API. Enter an analyst name in the UI to attribute actions; it is not a login. If you have replayed a range before, cases for those transactions are not duplicated. Choose an unprocessed range to see new events. The UI needs the API, PostgreSQL, and Redis running.
+
+The API and tests use `SENTINEL_DB_DSN` (default `postgresql://sentinel:sentinel_dev_only@localhost:5432/sentinel`); replay uses the same URL by default but needs an explicit `--dsn` if yours differs. `REDIS_URL` defaults to `redis://localhost:6379/0`. These credentials are for local development only. See the [guide](docs/PROJECT_GUIDE.md#local-operation-and-verification) for troubleshooting notes.
+
+## Optional analysis and annotations
+
+To evaluate the model on the **284,807 original rows**, run `scripts/.venv/bin/python scripts/train_anomaly.py` after acquiring `data/raw/creditcard.csv`. Each run writes an ignored `artifacts/ml/<run-id>/` directory with `model.joblib`, `manifest.json`, `metrics.json`, and `report.md`. The split is stratified 70/15/15 **before** the database's 11× replication, avoiding replica leakage. The model uses V1–V28 and `log1p(Amount)`; it is an offline baseline, not a fraud probability or case gate.
+
+To annotate *new* cases, add `--ml-artifact-dir ../artifacts/ml/<run-id>` to the backend pipeline command. Use only a local artifact you trust because joblib deserialization can execute code. The pipeline checks the manifest, model hash, feature contract, and dependency versions before replay.
+
+To add an optional case explanation, set `ANTHROPIC_API_KEY` for the pipeline process and add `--claude-summaries`. This sends limited fired-rule evidence for newly flagged transactions to Anthropic, may incur charges, and can delay replay by up to the eight-second request deadline. With the flag absent, no key or external API call is needed. Neither optional feature changes flagging, and neither backfills earlier cases.
+
+## Verify the project
+
+With PostgreSQL and Redis running and migrations applied:
 
 ```sh
 (cd backend && .venv/bin/python -m pytest)
 backend/.venv/bin/python scripts/smoke_phase5.py
+scripts/.venv/bin/python -m pytest scripts/tests
+(cd frontend && npm test && npm run build)
 ```
 
-Pull requests and pushes to `main` run the same checks in [GitHub Actions](.github/workflows/ci.yml). The backend job starts fresh PostgreSQL 16 and Redis 7 services, applies migrations 001–008, runs all backend tests, then runs the real API/pipeline smoke script. An independent frontend job runs `npm ci`, `npm test`, and `npm run build` with Node 22. CI uses the development-only database credentials and requires no repository secrets.
+The smoke script boots a real API and pipeline against local Postgres/Redis, exercises the live case flow, and cleans up its reserved rows. [GitHub Actions](.github/workflows/ci.yml) runs the backend suite and smoke with real service containers, the offline data/ML tests, and the frontend tests/build on pull requests and pushes to `main`.
 
-To run the service and replay pipeline, start these in separate terminals from `backend/`:
+## What the results mean
 
-```sh
-.venv/bin/python -m uvicorn app.main:app --port 8000
-.venv/bin/python -m app.pipeline.run_pipeline --start-id 1 --end-id 1000 --speed-multiplier 10
-```
+The benchmark's ~34× warm-median improvement is for one indexed lookup on one local dataset. A Docker restart clears PostgreSQL's buffer cache but not necessarily the host OS page cache; the report does not claim a fully cold disk. The 50 transactions/second streaming check writes to a different partition from the measured user's historical data, so it does not establish same-partition contention or a throughput ceiling.
 
-The API uses `SENTINEL_DB_DSN` (default `postgresql://sentinel:sentinel_dev_only@localhost:5432/sentinel`) and `REDIS_URL` (default `redis://localhost:6379/0`).
-
-## Reviewer UI
-
-With Postgres, Redis, and the API running as above, install frontend dependencies locally and start Vite in another terminal:
-
-```sh
-cd frontend
-npm ci
-npm run dev
-```
-
-Open the local URL printed by Vite (normally `http://127.0.0.1:5173`). Its development proxy forwards `/cases`, `/rules`, `/stats`, and `/ws` to the API on port 8000. Enter an analyst name before claiming, releasing, deciding, or correcting a case; the name is stored in this browser and is an attribution label, not authentication. The queue offers status filters, search, priority order, and case detail; the detail shows rule evidence and optional ML/AI context when present. The Rules view edits current rule weights and thresholds and shows stats and change history. WebSocket events update the queue, while REST scans repair missed events after reconnects or periodically. An API connection is required; there is no deployed frontend or login yet.
-
-Run frontend checks with `npm test` and `npm run build` from `frontend/`.
-
-## Offline anomaly evaluation
-
-The Phase 6 command reads the original 284,807-row CSV directly; it does not use the 11x database replicas or connect to Postgres or Redis. Set up the scripts environment shown above, then place `creditcard.csv` at `data/raw/creditcard.csv` as described in the [data notes](data/README.md). To download only that file from the documented mirror without running database ingestion:
-
-```sh
-mkdir -p data/raw
-curl -fL https://storage.googleapis.com/download.tensorflow.org/data/creditcard.csv -o data/raw/creditcard.csv
-```
-
-Run the baseline from the repository root:
-
-```sh
-scripts/.venv/bin/python scripts/train_anomaly.py
-```
-
-Each run creates a new ignored directory under `artifacts/ml/` with `model.joblib`, `manifest.json`, `metrics.json`, and `report.md`. The manifest records the CSV hash, exact feature order, original-row split counts, fixed model settings, validation threshold, dependency versions, and code revision. The report shows validation and test metrics plus evaluation limits.
-
-## Optional case annotation
-
-Install the pinned backend dependencies from the Setup section and start Postgres and Redis. Choose a **specific, locally trusted** Phase 6 run directory; serialized model files must not come from an untrusted source. For the local run produced during Phase 6:
-
-```sh
-(cd backend && .venv/bin/python -m app.pipeline.run_pipeline \
-  --start-id 1 --end-id 1000 --speed-multiplier 10 \
-  --ml-artifact-dir ../artifacts/ml/20261007T155206536532Z-76274b691b16-725016f1d528)
-```
-
-Replace the artifact path with your own Phase 6 run directory if different. Without `--ml-artifact-dir`, the pipeline remains rules-only and leaves `ml_anomaly_score` null. With it, a compatible model loads once at startup; an invalid artifact stops startup before replay. Newly rule-created cases receive `-decision_function` scores after case creation and before their `case.created` event. A higher score means more anomalous; it is not a fraud probability or a flagging threshold. Runtime scoring failures leave the case intact with a null score and are logged. Existing cases are not rescored, and there is no historical backfill. The rule engine remains the only case-creation gate.
-
-## Optional case explanations
-
-Apply migration 008 and set `ANTHROPIC_API_KEY` in the pipeline process environment. Then enable summaries explicitly:
-
-```sh
-(cd backend && .venv/bin/python -m app.pipeline.run_pipeline \
-  --start-id 1 --end-id 1000 --speed-multiplier 10 --claude-summaries)
-```
-
-The pipeline sends only a newly flagged transaction's id, timestamp, amount, total rule score, and fired-rule evidence to Anthropic's Messages API using pinned `claude-haiku-4-5-20251001`. It does not send user/card ids, the source fraud label, PCA features, analyst feedback, or the optional anomaly score. A valid explanation is stored as `ai_summary` with `ai_summary_model` and `ai_summary_generated_at`; the case detail, list, and live event expose it. The explanation is AI-generated context, not a fraud verdict. The external call has an eight-second timeout and no retry, so enabling it can slow replay and incur API charges. Any request/output error keeps the case and rule scores intact with null summary fields. Existing cases are not summarized again or backfilled. Without the flag, no Anthropic key or request is needed. The ML and summary options may be used together; neither changes which transactions are flagged.
+The model's recorded held-out test AP was **0.291836** and ROC-AUC **0.980504** at a validation-set threshold, but this was a random offline holdout of an anonymized public dataset, not prospective performance. Synthetic user and geography fields make the rules demonstrable, not a measure of real-world fraud quality. The [guide](docs/PROJECT_GUIDE.md#limits-and-next-steps) lists the other intentional local-demo limits and credible next steps.
