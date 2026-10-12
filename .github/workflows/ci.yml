@@ -9,6 +9,22 @@ permissions:
   contents: read
 
 jobs:
+  offline-data-ml:
+    name: Offline data and ML tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install script dependencies in project venv
+        run: |
+          python -m venv scripts/.venv
+          scripts/.venv/bin/python -m pip install -r scripts/requirements.txt
+      - name: Run offline data and ML tests
+        run: scripts/.venv/bin/python -m pytest scripts/tests
+
   backend:
     name: Backend tests and smoke
     runs-on: ubuntu-24.04
